@@ -1,0 +1,6 @@
+{
+  "name": "Vesper Vault — Bibliothèque de Jeux",
+  "description": "Bibliothèque cyberpunk de jeux vidéo PC portés sur le Web avec fond spatial 3D Three.js Vesper, favoris et administration autonome.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

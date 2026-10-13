@@ -1,0 +1,53 @@
+{
+  "entities": {
+    "Game": {
+      "title": "Game",
+      "description": "Fiche de jeu vidéo PC Web pour la bibliothèque House Game",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 100, "description": "Titre du jeu" },
+        "slug": { "type": "string", "maxLength": 100, "description": "Identifiant lisible" },
+        "tagline": { "type": "string", "maxLength": 200, "description": "Accroche courte" },
+        "description": { "type": "string", "maxLength": 2000, "description": "Description complète du gameplay" },
+        "category": { "type": "string", "enum": ["Action", "Course", "Cyberpunk", "Survie", "Arcade", "Stratégie"], "description": "Catégorie principale" },
+        "gameUrl": { "type": "string", "maxLength": 500, "description": "URL web playable du jeu" },
+        "embedCode": { "type": "string", "maxLength": 500000, "description": "Balise HTML / code source complet ou code d'intégration pour lancer le jeu" },
+        "coverUrl": { "type": "string", "maxLength": 500, "description": "Lien de la bannière ou image" },
+        "coverGradient": { "type": "string", "maxLength": 100, "description": "Style de dégradé néon fallback" },
+        "coverIcon": { "type": "string", "maxLength": 50, "description": "Icône thématique" },
+        "controlsInfo": { "type": "string", "maxLength": 300, "description": "Configuration des touches clavier et souris" },
+        "studio": { "type": "string", "maxLength": 100, "description": "Studio ou développeur" },
+        "rating": { "type": "number", "description": "Note du jeu sur 5" },
+        "playCount": { "type": "number", "description": "Nombre de parties lancées" },
+        "releaseYear": { "type": "number", "description": "Année de sortie" },
+        "isFeatured": { "type": "boolean", "description": "Mise en avant sur la page d'accueil" },
+        "tags": { "type": "array", "description": "Tags du jeu" },
+        "createdAt": { "type": "string", "description": "Date de création ISO" }
+      },
+      "required": ["title", "category", "description", "gameUrl"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Profil utilisateur et liste de favoris",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 150, "description": "Email du joueur" },
+        "username": { "type": "string", "maxLength": 60, "description": "Pseudo du joueur" },
+        "isAdmin": { "type": "boolean", "description": "Droits administrateur" },
+        "favorites": { "type": "array", "description": "Liste des identifiants des jeux favoris" },
+        "createdAt": { "type": "string", "description": "Date de création du compte" }
+      },
+      "required": ["email", "username"]
+    }
+  },
+  "firestore": {
+    "/games/{gameId}": {
+      "schema": "Game",
+      "description": "Catalogue de jeux de la bibliothèque House Game"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Profils des joueurs et favoris"
+    }
+  }
+}

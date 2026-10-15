@@ -29,7 +29,25 @@ export interface Game {
   studio: string;
   tags: string[];
   isFeatured?: boolean;
+  isPrivate?: boolean; // Mode privé réservé aux tests de l'ADMIN
   createdAt: string;
+}
+
+export interface GameSave {
+  id: string;
+  gameId: string;
+  gameTitle: string;
+  userId: string;
+  fileName: string;
+  fileData: string; // Base64 data URL ou contenu texte
+  fileSize: number; // en octets
+  createdAt: string;
+}
+
+export interface UserPlaytime {
+  gameId: string;
+  seconds: number;
+  lastPlayedAt: string;
 }
 
 export interface User {

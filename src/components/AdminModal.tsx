@@ -1,6 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { Game, GameCategory } from '../types';
-import { X, PlusCircle, Trash2, Shield, Search, Star, Layers, Check, Database, Edit, Image as ImageIcon, Code2, Globe, Code } from 'lucide-react';
+import { 
+  X, 
+  PlusCircle, 
+  Trash2, 
+  Shield, 
+  Search, 
+  Star, 
+  Layers, 
+  Check, 
+  Database, 
+  Edit, 
+  Image as ImageIcon, 
+  Code2, 
+  Globe, 
+  Code,
+  Lock,
+  Unlock,
+  Copy,
+  Eye,
+  EyeOff
+} from 'lucide-react';
 import { GameArtwork } from './GameArtwork';
 
 interface AdminModalProps {
@@ -42,6 +62,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'form' | 'manage'>('form');
   const [searchFilter, setSearchFilter] = useState('');
+  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'public' | 'private'>('all');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [editingGameId, setEditingGameId] = useState<string | null>(null);
 
@@ -63,6 +85,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [selectedGradient, setSelectedGradient] = useState(GRADIENT_PRESETS[0].value);
   const [selectedIcon, setSelectedIcon] = useState(GRADIENT_PRESETS[0].icon);
   const [isFeatured, setIsFeatured] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
 
   // Sync state when gameToEdit changes or modal opens
   useEffect(() => {
@@ -85,6 +108,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       setSelectedGradient(gameToEdit.coverGradient || GRADIENT_PRESETS[0].value);
       setSelectedIcon(gameToEdit.coverIcon || GRADIENT_PRESETS[0].icon);
       setIsFeatured(Boolean(gameToEdit.isFeatured));
+      setIsPrivate(Boolean(gameToEdit.isPrivate));
       setActiveTab('form');
     } else {
       setEditingGameId(null);
@@ -110,6 +134,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setSelectedGradient(GRADIENT_PRESETS[0].value);
     setSelectedIcon(GRADIENT_PRESETS[0].icon);
     setIsFeatured(false);
+    setIsPrivate(false);
   };
 
   const startEditGame = (game: Game) => {
@@ -131,6 +156,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setSelectedGradient(game.coverGradient || GRADIENT_PRESETS[0].value);
     setSelectedIcon(game.coverIcon || GRADIENT_PRESETS[0].icon);
     setIsFeatured(Boolean(game.isFeatured));
+    setIsPrivate(Boolean(game.isPrivate));
     setActiveTab('form');
   };
 
@@ -173,6 +199,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       studio: studio.trim(),
       tags,
       isFeatured,
+      isPrivate,
       rating: Number(rating) || 5.0,
       playCount: Number(playCount) || 1,
       releaseYear: new Date().getFullYear(),
@@ -678,6 +705,27 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               </div>
             </label>
 
+            {/* Mode Public ou Privé (Test Admin) */}
+            <label className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/50 transition-colors cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isPrivate}
+                onChange={(e) => setIsPrivate(e.target.checked)}
+                className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400"
+              />
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-xs font-bold text-white">
+                    Mode Privé (Test Admin Uniquement)
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-300 block">
+                  Si coché, ce jeu est masqué aux visiteurs et aux joueurs ordinaires. Seul vous (Admin) pourrez le voir et le tester.
+                </span>
+              </div>
+            </label>
+
             {/* Submit */}
             <div className="pt-2 flex items-center justify-end gap-3">
               <button
@@ -709,14 +757,45 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   type="text"
                   value={searchFilter}
                   onChange={(e) => setSearchFilter(e.target.value)}
-                  placeholder="Rechercher un jeu à modifier..."
+                  placeholder="Rechercher par titre, ID ou catégorie..."
                   className="w-full pl-9 pr-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-cyan-400"
                 />
               </div>
 
+              {/* Visibility Filter Selector */}
+              <div className="flex items-center gap-1 p-1 bg-black/40 rounded-xl border border-white/10 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setVisibilityFilter('all')}
+                  className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+                    visibilityFilter === 'all' ? 'bg-white/15 text-white font-bold' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Tous ({games.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibilityFilter('public')}
+                  className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+                    visibilityFilter === 'public' ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Publics ({games.filter(g => !g.isPrivate).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibilityFilter('private')}
+                  className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+                    visibilityFilter === 'private' ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Privés ({games.filter(g => g.isPrivate).length})
+                </button>
+              </div>
+
               <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-cyan-300 bg-cyan-950/40 border border-cyan-500/30 rounded-xl font-mono">
                 <Database className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Base Firebase Active</span>
+                <span>Base Firestore Active</span>
               </div>
             </div>
 
@@ -724,13 +803,13 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             <div className="space-y-2.5 mt-2">
               {filteredGames.length === 0 ? (
                 <div className="text-center py-12 text-slate-500 text-xs">
-                  Aucun jeu trouvé pour cette recherche.
+                  Aucun jeu trouvé pour cette recherche ou ce filtre.
                 </div>
               ) : (
                 filteredGames.map(game => (
                   <div
                     key={game.id}
-                    className="flex items-center justify-between gap-4 p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-16 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-900 border border-white/10">
@@ -745,9 +824,23 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           className="w-full h-full object-cover"
                         />
                       </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h4 className="text-xs font-bold text-white truncate">{game.title}</h4>
+                          
+                          {/* Visibility badge */}
+                          {game.isPrivate ? (
+                            <span className="text-[10px] font-mono text-amber-300 px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-500/30 flex items-center gap-1">
+                              <Lock className="w-2.5 h-2.5" />
+                              <span>Privé (Test)</span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-mono text-emerald-300 px-1.5 py-0.2 rounded bg-emerald-500/20 border border-emerald-500/30 flex items-center gap-1">
+                              <Globe className="w-2.5 h-2.5" />
+                              <span>Public</span>
+                            </span>
+                          )}
+
                           <span className="text-[10px] font-mono text-cyan-300 px-1.5 py-0.2 rounded bg-cyan-500/20">
                             {game.category}
                           </span>
@@ -756,21 +849,53 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                               Balise HTML
                             </span>
                           ) : (
-                            <span className="text-[10px] font-mono text-emerald-300 px-1.5 py-0.2 rounded bg-emerald-500/20 border border-emerald-500/30">
+                            <span className="text-[10px] font-mono text-slate-300 px-1.5 py-0.2 rounded bg-slate-500/20 border border-slate-500/30">
                               Lien URL
                             </span>
                           )}
-                          <span className="text-[10px] text-amber-300 flex items-center gap-0.5">
-                            ★ {game.rating.toFixed(1)}
-                          </span>
                         </div>
-                        <p className="text-[11px] text-slate-400 truncate">
-                          {game.tagline} · {game.playCount} avis
-                        </p>
+
+                        {/* Firebase Document ID row with direct copy */}
+                        <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+                          <span className="text-purple-300 font-semibold">Firebase ID:</span>
+                          <span className="text-slate-300 truncate max-w-xs">{game.id}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(game.id);
+                              setCopiedId(game.id);
+                              setTimeout(() => setCopiedId(null), 2000);
+                            }}
+                            className="p-0.5 rounded hover:bg-white/10 text-cyan-400 hover:text-cyan-300 cursor-pointer"
+                            title="Copier l'ID Firebase"
+                          >
+                            {copiedId === game.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                      {/* Toggle Public/Private Quick Action */}
+                      {onUpdateGame && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateGame(game.id, { isPrivate: !game.isPrivate });
+                          }}
+                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                            game.isPrivate
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30'
+                              : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+                          }`}
+                          title={game.isPrivate ? "Rendre ce jeu public" : "Mettre ce jeu en privé pour tests"}
+                        >
+                          {game.isPrivate ? <Lock className="w-3 h-3 text-amber-400" /> : <Unlock className="w-3 h-3" />}
+                          <span>{game.isPrivate ? 'En Privé' : 'En Public'}</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => startEditGame(game)}
@@ -784,7 +909,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          if (window.confirm(`Supprimer définitivement "${game.title}" ?`)) {
+                          if (window.confirm(`Supprimer définitivement "${game.title}" de Firebase ?`)) {
                             onDeleteGame(game.id);
                           }
                         }}

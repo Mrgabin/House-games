@@ -9,6 +9,7 @@ interface NavbarProps {
   onSelectView: (view: ActiveView) => void;
   onOpenAuth: () => void;
   onOpenAdmin: () => void;
+  onOpenChangelog: () => void;
   onLogout: () => void;
 }
 
@@ -19,6 +20,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectView,
   onOpenAuth,
   onOpenAdmin,
+  onOpenChangelog,
   onLogout
 }) => {
   return (
@@ -97,10 +99,32 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             À propos
           </a>
+
+          <button
+            type="button"
+            onClick={onOpenChangelog}
+            className="text-slate-300 hover:text-cyan-300 transition-colors whitespace-nowrap shrink-0 py-1 flex items-center gap-1.5 cursor-pointer group"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-12 transition-transform" />
+            <span>Mises à jour</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              v1.7
+            </span>
+          </button>
         </nav>
 
         {/* Zone 3: 1 Primary Action */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Mobile Changelog trigger */}
+          <button
+            type="button"
+            onClick={onOpenChangelog}
+            className="md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/30 text-cyan-300 text-xs font-mono hover:bg-cyan-900/40 transition-colors cursor-pointer"
+            title="Historique des mises à jour"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+            <span>v1.7</span>
+          </button>
           {currentUser ? (
             <div className="flex items-center gap-2.5">
               {/* If Admin, quick add game shortcut */}

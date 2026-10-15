@@ -10,6 +10,7 @@ import { GameDetailsModal } from './components/GameDetailsModal';
 import { PlayablePlayerModal } from './components/PlayablePlayerModal';
 import { AuthModal } from './components/AuthModal';
 import { AdminModal } from './components/AdminModal';
+import { ChangelogModal } from './components/ChangelogModal';
 import { 
   Search, 
   Heart, 
@@ -19,7 +20,10 @@ import {
   PlusCircle, 
   SlidersHorizontal,
   Flame,
-  Database
+  Database,
+  Lock,
+  Unlock,
+  Clock
 } from 'lucide-react';
 
 const CATEGORIES: GameCategory[] = [
@@ -42,15 +46,20 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<GameCategory>('Tous');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<'popular' | 'rating' | 'recent'>('recent');
+  const [adminVisibilityFilter, setAdminVisibilityFilter] = useState<'all' | 'public' | 'private'>('all');
 
   // Modals state
   const [selectedGameForDetails, setSelectedGameForDetails] = useState<Game | null>(null);
   const [playingGame, setPlayingGame] = useState<Game | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+  const [isChangelogOpen, setIsChangelogOpen] = useState<boolean>(false);
   const [gameToEdit, setGameToEdit] = useState<Game | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isFirebaseSyncing, setIsFirebaseSyncing] = useState<boolean>(true);
+
+  // Playtimes state (per game for current connected user)
+  const [userPlaytimes, setUserPlaytimes] = useState<Record<string, number>>({});
 
   // Subscribe to real-time Firebase Firestore updates on mount
   useEffect(() => {
@@ -70,7 +79,6 @@ export default function App() {
     });
 
     // 3. Real-time Firestore synchronization on 'games' collection
-    // Any change or deletion made directly in Firebase instantly updates the UI!
     const unsubscribeGames = FirebaseService.subscribeGames((liveGames) => {
       setGames(liveGames);
       setIsFirebaseSyncing(false);
@@ -81,6 +89,21 @@ export default function App() {
       unsubscribeGames();
     };
   }, []);
+
+  // Sync user playtimes whenever user logs in or changes
+  useEffect(() => {
+    if (currentUser) {
+      const local = StorageService.getUserPlaytimes(currentUser.id);
+      setUserPlaytimes(local);
+
+      const unsub = FirebaseService.subscribeUserPlaytimes(currentUser.id, (map) => {
+        setUserPlaytimes(prev => ({ ...prev, ...map }));
+      });
+      return () => unsub();
+    } else {
+      setUserPlaytimes({});
+    }
+  }, [currentUser?.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -163,8 +186,23 @@ export default function App() {
   };
 
   const handleResetDefaults = () => {
-    // Keep empty as requested
     showToast('La bibliothèque est synchronisée avec Firebase.');
+  };
+
+  // Handler for playtime recording
+  const handleRecordPlaytime = async (gameId: string, additionalSeconds: number) => {
+    if (!currentUser || additionalSeconds <= 0) return;
+    const updatedSec = StorageService.recordPlaytime(currentUser.id, gameId, additionalSeconds);
+    setUserPlaytimes(prev => ({ ...prev, [gameId]: updatedSec }));
+    try {
+      await FirebaseService.recordPlaytime(currentUser.id, gameId, additionalSeconds);
+    } catch (e) {
+      console.warn("Erreur enregistrement temps de jeu Firebase:", e);
+    }
+  };
+
+  const handleCopyFirebaseId = (id: string) => {
+    showToast(`ID Firebase copié : ${id}`);
   };
 
   // Handlers for Auth
@@ -187,13 +225,24 @@ export default function App() {
 
   // Featured Game for the Hero Spotlight
   const featuredGame = useMemo(() => {
-    if (games.length === 0) return null;
-    return games.find(g => g.isFeatured) || games[0];
-  }, [games]);
+    const visibleGames = currentUser?.isAdmin ? games : games.filter(g => !g.isPrivate);
+    if (visibleGames.length === 0) return null;
+    return visibleGames.find(g => g.isFeatured) || visibleGames[0];
+  }, [games, currentUser?.isAdmin]);
 
   // Filtered & Sorted Games List
   const displayGames = useMemo(() => {
     let result = [...games];
+
+    // Privacy Filter:
+    // Non-admin users NEVER see private test games!
+    if (!currentUser?.isAdmin) {
+      result = result.filter(g => !g.isPrivate);
+    } else if (adminVisibilityFilter === 'public') {
+      result = result.filter(g => !g.isPrivate);
+    } else if (adminVisibilityFilter === 'private') {
+      result = result.filter(g => !!g.isPrivate);
+    }
 
     // Favorites View Filter
     if (activeView === 'favorites') {
@@ -227,12 +276,12 @@ export default function App() {
     }
 
     return result;
-  }, [games, activeView, favorites, selectedCategory, searchQuery, sortBy]);
+  }, [games, activeView, favorites, selectedCategory, searchQuery, sortBy, currentUser?.isAdmin, adminVisibilityFilter]);
 
   return (
     <div className="relative min-h-screen text-slate-100 flex flex-col font-['Plus_Jakarta_Sans']">
       
-      {/* 3D WebGL Spatial Vesper Planet Background (Clean, permanently Vesper, zero floating widgets) */}
+      {/* 3D WebGL Spatial Vesper Planet Background */}
       <CelestialBackground />
 
       {/* Floating Toast Notification */}
@@ -254,6 +303,7 @@ export default function App() {
         onSelectView={(view) => setActiveView(view)}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenAdmin={() => setIsAdminModalOpen(true)}
+        onOpenChangelog={() => setIsChangelogOpen(true)}
         onLogout={handleLogout}
       />
 
@@ -293,9 +343,51 @@ export default function App() {
             </p>
           </div>
 
-          {/* Quick Admin Action if elevated */}
+          {/* Quick Admin Action & Admin Test Mode Filter Strip */}
           {currentUser?.isAdmin && (
-            <div className="flex items-center gap-2 self-start md:self-auto">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 self-start md:self-auto">
+              
+              {/* Admin Test Visibility Toggle */}
+              <div className="flex items-center gap-1 p-1 bg-[#0a1028]/80 border border-purple-500/30 rounded-xl text-xs backdrop-blur-md">
+                <span className="text-[10px] font-mono text-purple-300 px-2 flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-amber-400" />
+                  <span>Admin :</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAdminVisibilityFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    adminVisibilityFilter === 'all'
+                      ? 'bg-purple-600/50 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Tous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminVisibilityFilter('public')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    adminVisibilityFilter === 'public'
+                      ? 'bg-emerald-500/30 text-emerald-200 shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Publics
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminVisibilityFilter('private')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    adminVisibilityFilter === 'private'
+                      ? 'bg-amber-500/30 text-amber-200 shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Privés ({games.filter(g => g.isPrivate).length})
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setIsAdminModalOpen(true)}
@@ -384,11 +476,13 @@ export default function App() {
                 game={game}
                 isFavorite={favorites.includes(game.id)}
                 isAdmin={currentUser?.isAdmin}
+                userPlaytimeSeconds={currentUser ? (userPlaytimes[game.id] || 0) : 0}
                 onPlay={(g) => setPlayingGame(g)}
                 onOpenDetails={(g) => setSelectedGameForDetails(g)}
                 onToggleFavorite={handleToggleFavorite}
                 onDeleteGame={handleDeleteGame}
                 onEditGame={currentUser?.isAdmin ? handleEditGame : undefined}
+                onCopyFirebaseId={handleCopyFirebaseId}
               />
             ))}
           </div>
@@ -454,8 +548,21 @@ export default function App() {
             <span>Bibliothèque de jeux Web</span>
           </div>
 
-          <div className="text-[11px] text-slate-500 font-mono">
-            Firebase Firestore Synchronisé
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsChangelogOpen(true)}
+              className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-cyan-300 transition-colors py-1 px-2.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer"
+            >
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+              <span>Mises à jour (v1.7)</span>
+            </button>
+
+            <span className="text-slate-600">·</span>
+
+            <div className="text-[11px] text-slate-500 font-mono">
+              Firebase Firestore Synchronisé
+            </div>
           </div>
         </div>
       </footer>
@@ -466,17 +573,21 @@ export default function App() {
         game={selectedGameForDetails}
         isFavorite={selectedGameForDetails ? favorites.includes(selectedGameForDetails.id) : false}
         isAdmin={currentUser?.isAdmin}
+        userPlaytimeSeconds={currentUser && selectedGameForDetails ? (userPlaytimes[selectedGameForDetails.id] || 0) : 0}
         onClose={() => setSelectedGameForDetails(null)}
         onPlay={(game) => setPlayingGame(game)}
         onToggleFavorite={handleToggleFavorite}
         onDeleteGame={handleDeleteGame}
         onEditGame={currentUser?.isAdmin ? handleEditGame : undefined}
+        onCopyFirebaseId={handleCopyFirebaseId}
       />
 
       {/* 2. Playable Game Web Player */}
       <PlayablePlayerModal
         game={playingGame}
+        currentUser={currentUser}
         onClose={() => setPlayingGame(null)}
+        onRecordPlaytime={handleRecordPlaytime}
       />
 
       {/* 3. Authentication Modal */}
@@ -499,6 +610,12 @@ export default function App() {
         onUpdateGame={handleUpdateGame}
         onDeleteGame={handleDeleteGame}
         onResetDefaults={handleResetDefaults}
+      />
+
+      {/* 5. Changelog / Updates History Modal */}
+      <ChangelogModal
+        isOpen={isChangelogOpen}
+        onClose={() => setIsChangelogOpen(false)}
       />
 
     </div>

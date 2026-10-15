@@ -1,30 +1,68 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Game } from '../types';
-import { X, Play, Heart, Star, ExternalLink, Keyboard, Trash2, Edit } from 'lucide-react';
+import { 
+  X, 
+  Play, 
+  Heart, 
+  Star, 
+  Keyboard, 
+  Trash2, 
+  Edit, 
+  Lock, 
+  Copy, 
+  Check, 
+  Clock, 
+  Database,
+  ShieldAlert
+} from 'lucide-react';
 import { GameArtwork } from './GameArtwork';
 
 interface GameDetailsModalProps {
   game: Game | null;
   isFavorite: boolean;
   isAdmin?: boolean;
+  userPlaytimeSeconds?: number;
   onClose: () => void;
   onPlay: (game: Game) => void;
   onToggleFavorite: (gameId: string) => void;
   onDeleteGame?: (gameId: string) => void;
   onEditGame?: (game: Game) => void;
+  onCopyFirebaseId?: (id: string) => void;
 }
 
 export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
   game,
   isFavorite,
   isAdmin = false,
+  userPlaytimeSeconds = 0,
   onClose,
   onPlay,
   onToggleFavorite,
   onDeleteGame,
-  onEditGame
+  onEditGame,
+  onCopyFirebaseId
 }) => {
+  const [copiedId, setCopiedId] = useState(false);
+
   if (!game) return null;
+
+  const handleCopyId = () => {
+    navigator.clipboard.writeText(game.id).then(() => {
+      setCopiedId(true);
+      if (onCopyFirebaseId) {
+        onCopyFirebaseId(game.id);
+      }
+      setTimeout(() => setCopiedId(false), 2000);
+    });
+  };
+
+  const formatPlaytime = (sec: number) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m} min`;
+    return `${sec} secondes`;
+  };
 
   return (
     <div 
@@ -49,7 +87,7 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
             className="w-full h-full object-cover object-center"
           />
 
-          {/* Dark Cinematic Cyber Scrim Overlay (no washed-out/pale banner) */}
+          {/* Dark Cinematic Cyber Scrim Overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-[#070c1e] via-[#070c1e]/40 to-black/40 pointer-events-none" />
 
           {/* Close Button */}
@@ -78,6 +116,14 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
             </button>
           )}
 
+          {/* Private Mode Banner Indicator */}
+          {game.isPrivate && (
+            <div className="absolute bottom-4 left-4 z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/90 text-slate-950 text-xs font-bold shadow-lg backdrop-blur-md">
+              <Lock className="w-3.5 h-3.5" />
+              <span>Mode Privé (Visible uniquement par l'Admin)</span>
+            </div>
+          )}
+
           {/* Quick Play Floating Button on Banner */}
           <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2">
             <button
@@ -100,19 +146,28 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
           {/* Header & Title */}
           <div>
             <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2 text-xs font-mono text-cyan-400">
+              <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 flex-wrap">
                 <span className="font-semibold uppercase tracking-wider text-purple-300">{game.category}</span>
                 <span aria-hidden="true" className="text-white/20">·</span>
                 <span className="text-slate-400">{game.performanceBadge}</span>
                 <span aria-hidden="true" className="text-white/20">·</span>
                 <span className="text-slate-400 font-mono">{game.releaseYear}</span>
+                {game.isPrivate && (
+                  <>
+                    <span aria-hidden="true" className="text-white/20">·</span>
+                    <span className="text-amber-400 font-bold flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      Test Admin Privé
+                    </span>
+                  </>
+                )}
               </div>
 
               {/* Favorite Button */}
               <button
                 type="button"
                 onClick={() => onToggleFavorite(game.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors cursor-pointer shrink-0 ${
                   isFavorite
                     ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-sm'
                     : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
@@ -130,6 +185,24 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
               {game.tagline}
             </p>
           </div>
+
+          {/* Personal Playtime Card (If User logged in and played) */}
+          {userPlaytimeSeconds > 0 && (
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-xs">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="font-semibold text-white">Votre temps de jeu sur ce titre</p>
+                  <p className="text-[11px] text-slate-400">Enregistré et synchronisé avec votre compte</p>
+                </div>
+              </div>
+              <span className="text-base font-bold font-mono text-cyan-300 tabular-nums">
+                {formatPlaytime(userPlaytimeSeconds)}
+              </span>
+            </div>
+          )}
 
           {/* Description */}
           <div className="text-sm text-slate-300 leading-relaxed bg-white/5 p-4 rounded-xl border border-white/5">
@@ -167,12 +240,47 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
               </span>
             </div>
             <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-              <span className="text-slate-400 block text-[11px]">Compatibilité</span>
+              <span className="text-slate-400 block text-[11px]">Mode de lancement</span>
               <span className="font-semibold text-emerald-400 block mt-0.5 truncate">
-                {game.embedCode?.trim() ? 'Balise HTML WebGL' : 'Navigateur Web'}
+                {game.embedCode?.trim() ? 'Balise HTML Source' : 'URL Web Playable'}
               </span>
             </div>
           </div>
+
+          {/* Admin Dedicated Firebase ID Box (ADMIN ONLY) */}
+          {isAdmin && (
+            <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-500/40 flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5 overflow-hidden">
+                <Database className="w-4 h-4 text-purple-400 shrink-0" />
+                <div className="overflow-hidden">
+                  <span className="text-[11px] text-purple-300 font-semibold block">
+                    Identifiant Firebase Firestore (Document ID) :
+                  </span>
+                  <span className="font-mono text-slate-300 text-xs truncate block select-all">
+                    {game.id}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyId}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-400/40 text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                title="Copier l'identifiant pour le retrouver dans la console Firebase"
+              >
+                {copiedId ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Copié !</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copier ID</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
 
           {/* Tags */}
           {game.tags && game.tags.length > 0 && (
@@ -212,10 +320,10 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
                       onClose();
                     }
                   }}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-400 hover:text-red-200 hover:bg-red-950/50 border border-red-500/30 rounded-xl transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs text-rose-400 hover:text-rose-200 hover:bg-rose-950/60 border border-rose-500/30 rounded-xl transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>Supprimer (Admin)</span>
+                  <span>Supprimer</span>
                 </button>
               )}
             </div>
@@ -223,19 +331,10 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  if (game.embedCode?.trim()) {
-                    const blob = new Blob([game.embedCode], { type: 'text/html;charset=utf-8' });
-                    const url = URL.createObjectURL(blob);
-                    window.open(url, '_blank');
-                  } else {
-                    window.open(game.gameUrl, '_blank');
-                  }
-                }}
-                className="flex items-center gap-1.5 px-4 py-2.5 text-xs text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors cursor-pointer"
+                onClick={onClose}
+                className="px-4 py-2 text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
               >
-                <span>Ouvrir dans un nouvel onglet</span>
-                <ExternalLink className="w-3.5 h-3.5" />
+                Fermer
               </button>
 
               <button
@@ -244,9 +343,9 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
                   onClose();
                   onPlay(game);
                 }}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-teal-400 hover:from-cyan-300 hover:to-teal-300 text-slate-950 font-bold text-xs sm:text-sm shadow-[0_0_20px_rgba(76,230,255,0.5)] transition-all cursor-pointer"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-[0_0_20px_rgba(160,88,255,0.4)] transition-all cursor-pointer"
               >
-                <Play className="w-4 h-4 fill-current" />
+                <Play className="w-3.5 h-3.5 fill-current" />
                 <span>Jouer maintenant</span>
               </button>
             </div>

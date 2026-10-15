@@ -1,29 +1,54 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Game } from '../types';
-import { Play, Heart, Star, Trash2, Edit } from 'lucide-react';
+import { Play, Heart, Star, Trash2, Edit, Lock, Copy, Check, Clock, Database } from 'lucide-react';
 import { GameArtwork } from './GameArtwork';
 
 interface GameCardProps {
   game: Game;
   isFavorite: boolean;
   isAdmin?: boolean;
+  userPlaytimeSeconds?: number;
   onPlay: (game: Game) => void;
   onOpenDetails: (game: Game) => void;
   onToggleFavorite: (gameId: string) => void;
   onDeleteGame?: (gameId: string) => void;
   onEditGame?: (game: Game) => void;
+  onCopyFirebaseId?: (id: string) => void;
 }
 
 export const GameCard: React.FC<GameCardProps> = ({
   game,
   isFavorite,
   isAdmin = false,
+  userPlaytimeSeconds = 0,
   onPlay,
   onOpenDetails,
   onToggleFavorite,
   onDeleteGame,
-  onEditGame
+  onEditGame,
+  onCopyFirebaseId
 }) => {
+  const [copiedId, setCopiedId] = useState(false);
+
+  const handleCopyId = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(game.id).then(() => {
+      setCopiedId(true);
+      if (onCopyFirebaseId) {
+        onCopyFirebaseId(game.id);
+      }
+      setTimeout(() => setCopiedId(false), 2000);
+    });
+  };
+
+  const formatPlaytime = (sec: number) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m} min`;
+    return `${sec}s`;
+  };
+
   return (
     <article className="group relative flex flex-col rounded-2xl border border-white/10 bg-[#070c1e]/65 hover:bg-[#070c1e]/85 backdrop-blur-md overflow-hidden transition-all duration-300 hover:border-purple-500/40 hover:shadow-[0_8px_30px_rgba(177,116,255,0.18)] hover:-translate-y-1">
       
@@ -55,6 +80,14 @@ export const GameCard: React.FC<GameCardProps> = ({
         >
           <Heart className={`w-3.5 h-3.5 ${isFavorite ? 'fill-current' : ''}`} />
         </button>
+
+        {/* Private / Admin Test Badge */}
+        {game.isPrivate && (
+          <div className="absolute bottom-2.5 left-2.5 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/90 text-slate-950 text-[10px] font-bold shadow-lg backdrop-blur-md">
+            <Lock className="w-3 h-3 text-slate-950" />
+            <span>Privé · Test Admin</span>
+          </div>
+        )}
 
         {/* Admin Quick Action Buttons (Edit & Delete) */}
         {isAdmin && (
@@ -105,12 +138,22 @@ export const GameCard: React.FC<GameCardProps> = ({
       <div className="flex flex-col flex-1 p-4 sm:p-5">
         
         {/* Unboxed Metadata Line with typographic separators */}
-        <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-2">
-          <span className="font-semibold text-cyan-400/90">{game.category}</span>
-          <span aria-hidden="true" className="text-white/20">·</span>
-          <span>PC Port</span>
-          <span aria-hidden="true" className="text-white/20">·</span>
-          <span className="font-mono text-[11px] text-slate-500">{game.releaseYear}</span>
+        <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-cyan-400/90">{game.category}</span>
+            <span aria-hidden="true" className="text-white/20">·</span>
+            <span>PC Port</span>
+            <span aria-hidden="true" className="text-white/20">·</span>
+            <span className="font-mono text-[11px] text-slate-500">{game.releaseYear}</span>
+          </div>
+
+          {/* User Cumulative Playtime Display */}
+          {userPlaytimeSeconds > 0 && (
+            <div className="flex items-center gap-1 text-[11px] font-mono text-cyan-300 bg-cyan-950/50 px-2 py-0.5 rounded-md border border-cyan-500/20" title="Votre temps de jeu cumulé">
+              <Clock className="w-3 h-3 text-cyan-400" />
+              <span className="tabular-nums font-semibold">{formatPlaytime(userPlaytimeSeconds)}</span>
+            </div>
+          )}
         </div>
 
         {/* Title */}
@@ -126,8 +169,27 @@ export const GameCard: React.FC<GameCardProps> = ({
           {game.tagline}
         </p>
 
+        {/* Admin Firebase Document ID Bar (ADMIN ONLY) */}
+        {isAdmin && (
+          <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-400">
+            <div className="flex items-center gap-1.5 truncate max-w-[80%]" title={`ID Firebase Firestore: ${game.id}`}>
+              <Database className="w-3 h-3 text-purple-400 shrink-0" />
+              <span className="text-purple-300 font-semibold">ID:</span>
+              <span className="truncate text-slate-300">{game.id}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyId}
+              className="p-1 rounded hover:bg-white/10 text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer shrink-0"
+              title="Copier l'identifiant Firebase Firestore"
+            >
+              {copiedId ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+            </button>
+          </div>
+        )}
+
         {/* Footer info: Rating, play count & Play action */}
-        <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+        <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between text-xs">
           <div className="flex items-center gap-1 font-mono text-amber-300/90">
             <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
             <span className="font-bold">{game.rating.toFixed(1)}</span>

@@ -82,6 +82,7 @@ export const StorageService = {
       studio: newGameData.studio?.trim() || 'Indie Studio',
       tags: newGameData.tags && newGameData.tags.length > 0 ? newGameData.tags : [newGameData.category, 'Web Port', 'PC Game'],
       isFeatured: !!newGameData.isFeatured,
+      isPrivate: !!newGameData.isPrivate,
       createdAt: new Date().toISOString(),
     };
 
@@ -112,6 +113,7 @@ export const StorageService = {
       embedCode: updatedData.embedCode !== undefined ? updatedData.embedCode : existing.embedCode,
       controlsInfo: updatedData.controlsInfo?.trim() ?? existing.controlsInfo,
       studio: updatedData.studio?.trim() ?? existing.studio,
+      isPrivate: updatedData.isPrivate !== undefined ? Boolean(updatedData.isPrivate) : existing.isPrivate,
     };
 
     games[index] = updated;
@@ -290,5 +292,52 @@ export const StorageService = {
       return currentUser.favorites;
     }
     return getFromStorage<string[]>('vesper_vault_guest_favs', []);
+  },
+
+  // === GAME SAVES MANAGEMENT ===
+  getGameSaves(gameId?: string, userId?: string): import('../types').GameSave[] {
+    const allSaves = getFromStorage<import('../types').GameSave[]>('vesper_vault_saves_v1', []);
+    return allSaves.filter(s => {
+      if (userId && s.userId !== userId) return false;
+      if (gameId && s.gameId !== gameId) return false;
+      return true;
+    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  },
+
+  saveGameSave(saveData: Omit<import('../types').GameSave, 'id' | 'createdAt'>): import('../types').GameSave {
+    const allSaves = getFromStorage<import('../types').GameSave[]>('vesper_vault_saves_v1', []);
+    const newSave: import('../types').GameSave = {
+      ...saveData,
+      id: `save-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      createdAt: new Date().toISOString()
+    };
+    const updated = [newSave, ...allSaves];
+    setToStorage('vesper_vault_saves_v1', updated);
+    return newSave;
+  },
+
+  deleteGameSave(saveId: string): boolean {
+    const allSaves = getFromStorage<import('../types').GameSave[]>('vesper_vault_saves_v1', []);
+    const filtered = allSaves.filter(s => s.id !== saveId);
+    setToStorage('vesper_vault_saves_v1', filtered);
+    return true;
+  },
+
+  // === USER PLAYTIME TRACKING ===
+  recordPlaytime(userId: string, gameId: string, additionalSeconds: number): number {
+    if (!userId || !gameId || additionalSeconds <= 0) return 0;
+    const playtimesKey = `vesper_vault_playtime_${userId}`;
+    const playtimes = getFromStorage<Record<string, number>>(playtimesKey, {});
+    const current = playtimes[gameId] || 0;
+    const updated = current + additionalSeconds;
+    playtimes[gameId] = updated;
+    setToStorage(playtimesKey, playtimes);
+    return updated;
+  },
+
+  getUserPlaytimes(userId: string): Record<string, number> {
+    if (!userId) return {};
+    const playtimesKey = `vesper_vault_playtime_${userId}`;
+    return getFromStorage<Record<string, number>>(playtimesKey, {});
   }
 };

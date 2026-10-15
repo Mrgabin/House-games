@@ -23,7 +23,7 @@ import {
   User as FirebaseUser
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Game, User } from '../types';
+import { Game, User, GameSave } from '../types';
 
 // Initialize Firebase App singleton
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
@@ -79,6 +79,7 @@ export const FirebaseService = {
             studio: data.studio || 'Studio Indé',
             tags: Array.isArray(data.tags) ? data.tags : [data.category || 'Action', 'Web Port'],
             isFeatured: Boolean(data.isFeatured),
+            isPrivate: Boolean(data.isPrivate),
             createdAt: data.createdAt || new Date().toISOString()
           });
         });
@@ -121,6 +122,7 @@ export const FirebaseService = {
       studio: gameData.studio?.trim() || 'House Game Studio',
       tags: gameData.tags && gameData.tags.length > 0 ? gameData.tags : [gameData.category, 'Web Port', 'PC Game'],
       isFeatured: Boolean(gameData.isFeatured),
+      isPrivate: Boolean(gameData.isPrivate),
       createdAt: new Date().toISOString()
     };
 
@@ -152,6 +154,7 @@ export const FirebaseService = {
     if (updatedData.controlsInfo !== undefined) cleanUpdate.controlsInfo = updatedData.controlsInfo.trim();
     if (updatedData.studio !== undefined) cleanUpdate.studio = updatedData.studio.trim();
     if (updatedData.isFeatured !== undefined) cleanUpdate.isFeatured = Boolean(updatedData.isFeatured);
+    if (updatedData.isPrivate !== undefined) cleanUpdate.isPrivate = Boolean(updatedData.isPrivate);
     if (updatedData.tags !== undefined) cleanUpdate.tags = updatedData.tags;
     if (updatedData.coverGradient !== undefined) cleanUpdate.coverGradient = updatedData.coverGradient;
     if (updatedData.coverIcon !== undefined) cleanUpdate.coverIcon = updatedData.coverIcon;
@@ -219,5 +222,103 @@ export const FirebaseService = {
         onAuthChanged(null);
       }
     });
+  },
+
+  // === CLOUD SAVES MANAGEMENT ===
+  async saveGameSave(saveData: Omit<GameSave, 'id' | 'createdAt'>): Promise<string> {
+    const savesCollection = collection(db, 'users', saveData.userId, 'saves');
+    const newSaveRef = doc(savesCollection);
+    const record = {
+      gameId: saveData.gameId,
+      gameTitle: saveData.gameTitle,
+      userId: saveData.userId,
+      fileName: saveData.fileName,
+      fileData: saveData.fileData,
+      fileSize: saveData.fileSize,
+      createdAt: new Date().toISOString()
+    };
+    await setDoc(newSaveRef, record);
+    return newSaveRef.id;
+  },
+
+  subscribeGameSaves(userId: string, gameId: string, onUpdate: (saves: GameSave[]) => void): () => void {
+    if (!userId) {
+      onUpdate([]);
+      return () => {};
+    }
+    const savesCollection = collection(db, 'users', userId, 'saves');
+    return onSnapshot(
+      savesCollection,
+      (snapshot) => {
+        const loadedSaves: GameSave[] = [];
+        snapshot.forEach((snap) => {
+          const d = snap.data();
+          if (!gameId || d.gameId === gameId) {
+            loadedSaves.push({
+              id: snap.id,
+              gameId: d.gameId,
+              gameTitle: d.gameTitle,
+              userId: d.userId,
+              fileName: d.fileName,
+              fileData: d.fileData,
+              fileSize: d.fileSize || 0,
+              createdAt: d.createdAt || new Date().toISOString()
+            });
+          }
+        });
+        loadedSaves.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        onUpdate(loadedSaves);
+      },
+      (error) => {
+        console.warn('Erreur abonnement sauvegardes Firebase:', error);
+      }
+    );
+  },
+
+  async deleteGameSave(userId: string, saveId: string): Promise<void> {
+    await deleteDoc(doc(db, 'users', userId, 'saves', saveId));
+  },
+
+  // === USER PLAYTIME TRACKING IN FIRESTORE ===
+  async recordPlaytime(userId: string, gameId: string, additionalSeconds: number): Promise<void> {
+    if (!userId || !gameId || additionalSeconds <= 0) return;
+    try {
+      const playtimeDocRef = doc(db, 'users', userId, 'playtimes', gameId);
+      // Read current if possible or increment
+      const existingSnap = await getDocs(collection(db, 'users', userId, 'playtimes'));
+      let currentSeconds = 0;
+      existingSnap.forEach(d => {
+        if (d.id === gameId) {
+          currentSeconds = d.data().seconds || 0;
+        }
+      });
+      await setDoc(playtimeDocRef, {
+        seconds: currentSeconds + additionalSeconds,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Sync temps de jeu Firebase échoué (sauvegarde locale maintenue):', e);
+    }
+  },
+
+  subscribeUserPlaytimes(userId: string, onUpdate: (playtimes: Record<string, number>) => void): () => void {
+    if (!userId) {
+      onUpdate({});
+      return () => {};
+    }
+    const playtimesCollection = collection(db, 'users', userId, 'playtimes');
+    return onSnapshot(
+      playtimesCollection,
+      (snapshot) => {
+        const map: Record<string, number> = {};
+        snapshot.forEach((snap) => {
+          map[snap.id] = snap.data().seconds || 0;
+        });
+        onUpdate(map);
+      },
+      (error) => {
+        console.warn('Erreur abonnement temps de jeu Firestore:', error);
+      }
+    );
   }
 };

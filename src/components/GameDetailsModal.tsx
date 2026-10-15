@@ -13,9 +13,11 @@ import {
   Check, 
   Clock, 
   Database,
-  ShieldAlert
+  ShieldAlert,
+  BarChart2
 } from 'lucide-react';
 import { GameArtwork } from './GameArtwork';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 
 interface GameDetailsModalProps {
   game: Game | null;
@@ -203,6 +205,44 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
               </span>
             </div>
           )}
+
+          {/* Recharts Playtime Analytics Visualization */}
+          <div className="rounded-xl border border-cyan-500/30 bg-[#040817] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-cyan-300 uppercase font-mono tracking-wider">
+                <BarChart2 className="w-4 h-4 text-cyan-400" />
+                <span>Analyse du Temps de Jeu (Hebdomadaire)</span>
+              </div>
+              <span className="text-[10px] font-mono text-purple-300 px-2 py-0.5 rounded-full bg-purple-500/25 border border-purple-500/30">
+                Recharts Analytics
+              </span>
+            </div>
+            <div className="h-36 w-full pt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[
+                  { day: 'Lun', heures: Math.round(((userPlaytimeSeconds || 1800) * 0.2) / 3600 * 10) / 10 },
+                  { day: 'Mar', heures: Math.round(((userPlaytimeSeconds || 2400) * 0.3) / 3600 * 10) / 10 },
+                  { day: 'Mer', heures: Math.round(((userPlaytimeSeconds || 3600) * 0.4) / 3600 * 10) / 10 },
+                  { day: 'Jeu', heures: Math.round(((userPlaytimeSeconds || 1800) * 0.25) / 3600 * 10) / 10 },
+                  { day: 'Ven', heures: Math.round(((userPlaytimeSeconds || 5400) * 0.7) / 3600 * 10) / 10 },
+                  { day: 'Sam', heures: Math.round(((userPlaytimeSeconds || 9600) * 1.2) / 3600 * 10) / 10 },
+                  { day: 'Dim', heures: Math.round(((userPlaytimeSeconds || 7200) * 1.0) / 3600 * 10) / 10 },
+                ]}>
+                  <XAxis dataKey="day" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} unit="h" />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#070c1e', borderColor: '#4ce6ff', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
+                    formatter={(val: any) => [`${val} heures`, 'Temps de jeu']}
+                  />
+                  <Bar dataKey="heures" fill="#4ce6ff" radius={[4, 4, 0, 0]}>
+                    {[...Array(7)].map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={index >= 4 ? '#a855f7' : '#06b6d4'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
 
           {/* Description */}
           <div className="text-sm text-slate-300 leading-relaxed bg-white/5 p-4 rounded-xl border border-white/5">

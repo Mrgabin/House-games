@@ -83,17 +83,6 @@
 
 ---
 
-## 🔐 Accès Administrateur
-
-- **Email Admin** : `galtiergabin76@gmail.com`
-- **Mot de passe** : `111111`
-- **Privilèges** :
-  - Accès aux options de test en mode **Privé**.
-  - Visualisation des **IDs Firebase Firestore** pour chaque jeu.
-  - Ajout, modification et suppression de jeux en direct dans la base Cloud.
-  - **Export des logs d'activité et statistiques au format JSON** depuis la console d'administration.
-
----
 
 ## 🚀 Lancement & Compilation
 

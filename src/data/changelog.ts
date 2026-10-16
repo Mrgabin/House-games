@@ -11,6 +11,23 @@ export interface ChangelogItem {
 
 export const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    version: 'v2.0',
+    title: 'Niveaux ONL Dynamiques (XP & Rangs), Vitrine des Jeux Préférés & Visite des Profils',
+    date: 'Mise à jour majeure',
+    badge: 'Majeur',
+    category: 'Communauté & Profil',
+    summary: 'Système complet de calcul de niveau (30 min = 1 XP, 10 XP = 1 Niveau), affichage des heures passées et niveaux spécifiques sur chaque jeu en vitrine, et exploration des pages des autres joueurs.',
+    details: [
+      'Calcul automatique des niveaux ONL : 30 minutes de jeu cumulées = 1 point XP, et 10 points XP = 1 Niveau ONL (soit 5 heures de jeu par niveau). Les heures s\'accumulent sur l\'ensemble des jeux pour déterminer le Niveau ONL Global.',
+      'Niveaux spécifiques par jeu : Chaque jeu possède son propre niveau calculé selon le temps passé dessus (ex: Niveau 2 dès 10h de jeu), avec jauge de progression XP.',
+      'Vitrine ONL des jeux préférés enrichie : Affichage bien visible du nombre d\'heures passées sur chaque jeu, niveau spécifique du jeu, jauge XP et boutons d\'accès direct.',
+      'Visite des pages et vitrines des autres joueurs : Onglet « Explorer les Profils » dans la fenêtre Communauté permettant de visiter instantanément la page publique de n\'importe quel joueur.',
+      'Partage de profil via lien direct : Bouton pour copier l\'adresse URL de votre page publique (?profile=userId) et l\'envoyer à vos amis.',
+      'Badge de niveau ONL dans la barre de navigation et sur les fiches de jeux de la bibliothèque.'
+    ],
+    tips: 'Jouez à vos jeux favoris pour accumuler de l\'XP et faire monter votre Niveau ONL Global ainsi que le niveau individuel de chacun de vos jeux !'
+  },
+  {
     version: 'v1.9',
     title: 'Réseau d\'Amis ONL, Personnalisation Profil & Vitrine, Stats Réelles & Sauvegardes',
     date: 'Mise à jour en direct',

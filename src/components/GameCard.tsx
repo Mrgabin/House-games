@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Game } from '../types';
-import { Play, Heart, Star, Trash2, Edit, Lock, Copy, Check, Clock, Database } from 'lucide-react';
+import { Play, Heart, Star, Trash2, Edit, Lock, Copy, Check, Clock, Database, Zap } from 'lucide-react';
 import { GameArtwork } from './GameArtwork';
+import { calculateLevelFromSeconds } from '../utils/level';
 
 interface GameCardProps {
   game: Game;
@@ -112,9 +113,7 @@ export const GameCard: React.FC<GameCardProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (window.confirm(`Voulez-vous vraiment supprimer définitivement "${game.title}" de la bibliothèque ?`)) {
-                    onDeleteGame(game.id);
-                  }
+                  onDeleteGame(game.id);
                 }}
                 className="p-2 rounded-xl bg-black/70 text-red-400 border border-red-500/30 hover:bg-red-950/90 hover:text-red-200 transition-colors backdrop-blur-md cursor-pointer shadow-md"
                 title="Supprimer ce jeu"
@@ -147,11 +146,16 @@ export const GameCard: React.FC<GameCardProps> = ({
             <span className="font-mono text-[11px] text-slate-500">{game.releaseYear}</span>
           </div>
 
-          {/* User Cumulative Playtime Display */}
+          {/* User Cumulative Playtime & Specific Game Level Display */}
           {userPlaytimeSeconds > 0 && (
-            <div className="flex items-center gap-1 text-[11px] font-mono text-cyan-300 bg-cyan-950/50 px-2 py-0.5 rounded-md border border-cyan-500/20" title="Votre temps de jeu cumulé">
+            <div 
+              className="flex items-center gap-1.5 text-[11px] font-mono bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-500/30" 
+              title={`Temps cumulé: ${formatPlaytime(userPlaytimeSeconds)} | Niveau spécifique sur ce jeu: ${calculateLevelFromSeconds(userPlaytimeSeconds).level} (30 min = 1 XP, 10 XP = 1 Niveau)`}
+            >
+              <span className="text-purple-300 font-bold">Niv. {calculateLevelFromSeconds(userPlaytimeSeconds).level}</span>
+              <span className="text-slate-500">·</span>
               <Clock className="w-3 h-3 text-cyan-400" />
-              <span className="tabular-nums font-semibold">{formatPlaytime(userPlaytimeSeconds)}</span>
+              <span className="tabular-nums font-semibold text-cyan-300">{formatPlaytime(userPlaytimeSeconds)}</span>
             </div>
           )}
         </div>

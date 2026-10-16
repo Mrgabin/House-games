@@ -13,10 +13,13 @@ import {
   Clock, 
   ShieldCheck,
   Eye,
-  Sparkles
+  Sparkles,
+  Zap,
+  Compass
 } from 'lucide-react';
 import { FirebaseService } from '../services/firebase';
 import { StorageService } from '../services/storage';
+import { calculateGlobalLevel } from '../utils/level';
 
 interface FriendsModalProps {
   isOpen: boolean;
@@ -37,20 +40,46 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   onFriendListUpdated,
   onShowToast
 }) => {
-  const [activeTab, setActiveTab] = useState<'friends' | 'search'>('friends');
+  const [activeTab, setActiveTab] = useState<'friends' | 'explore' | 'search'>('explore');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [friendsList, setFriendsList] = useState<User[]>([]);
+  const [communityList, setCommunityList] = useState<User[]>([]);
+  const [userPlaytimesCache, setUserPlaytimesCache] = useState<Record<string, Record<string, number>>>({});
 
-  // Load and refresh friends details
+  // Load and refresh friends and community members
   useEffect(() => {
-    if (!currentUser) return;
-    const allUsers = StorageService.getUsers();
-    const myFriendIds = currentUser.friends || [];
-    const loadedFriends = allUsers.filter(u => myFriendIds.includes(u.id));
-    setFriendsList(loadedFriends);
-  }, [currentUser?.friends]);
+    if (!isOpen) return;
+
+    // 1. Load community users
+    const localUsers = StorageService.getUsers();
+    setCommunityList(localUsers);
+
+    // 2. Fetch live users from Firestore
+    FirebaseService.getAllCommunityUsers().then(fbUsers => {
+      if (fbUsers.length > 0) {
+        setCommunityList(fbUsers);
+      }
+    });
+
+    // 3. Load friends for current user
+    if (currentUser) {
+      const myFriendIds = currentUser.friends || [];
+      const loadedFriends = localUsers.filter(u => myFriendIds.includes(u.id));
+      setFriendsList(loadedFriends);
+    }
+  }, [isOpen, currentUser?.friends, currentUser?.id]);
+
+  // Preload playtimes cache for displayed users so levels calculate instantly
+  useEffect(() => {
+    if (!isOpen) return;
+    const cache: Record<string, Record<string, number>> = {};
+    communityList.forEach(u => {
+      cache[u.id] = StorageService.getUserPlaytimes(u.id);
+    });
+    setUserPlaytimesCache(cache);
+  }, [isOpen, communityList.length]);
 
   // Handle Search in Firestore & Local storage
   useEffect(() => {
@@ -62,13 +91,10 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
-        // First try Firestore
         let results = await FirebaseService.searchUsers(searchQuery);
         if (results.length === 0) {
-          // Fallback local storage
           results = StorageService.searchUsers(searchQuery);
         }
-        // Exclude current user from search
         setSearchResults(results.filter(u => u.id !== currentUser?.id));
       } catch (e) {
         console.warn("Recherche joueurs erreur:", e);
@@ -90,13 +116,11 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
       return;
     }
 
-    // 1. Local storage update
     const updatedUser = StorageService.addFriend(currentUser.id, targetUser.id);
     if (updatedUser) {
       onFriendListUpdated(updatedUser);
     }
 
-    // 2. Firebase Firestore update
     try {
       const newFriends = [...(currentUser.friends || []), targetUser.id];
       await FirebaseService.updateUserProfile(currentUser.id, { friends: newFriends });
@@ -104,22 +128,19 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
       console.warn("Erreur ajout ami Firebase:", e);
     }
 
-    // 3. Update local state
     setFriendsList(prev => [...prev.filter(f => f.id !== targetUser.id), targetUser]);
     onShowToast(`"${targetUser.username}" ajouté à votre liste d'amis !`);
   };
 
   const handleRemoveFriend = async (targetUserId: string, targetName: string) => {
     if (!currentUser) return;
-    if (!window.confirm(`Retirer ${targetName} de votre liste d'amis ?`)) return;
 
-    // 1. Local storage update
+    // Instant removal without blocking window.confirm prompt
     const updatedUser = StorageService.removeFriend(currentUser.id, targetUserId);
     if (updatedUser) {
       onFriendListUpdated(updatedUser);
     }
 
-    // 2. Firebase Firestore update
     try {
       const newFriends = (currentUser.friends || []).filter(id => id !== targetUserId);
       await FirebaseService.updateUserProfile(currentUser.id, { friends: newFriends });
@@ -133,6 +154,11 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
   const isAlreadyFriend = (userId: string) => {
     return (currentUser?.friends || []).includes(userId);
+  };
+
+  const getUserLevelInfo = (userId: string) => {
+    const playtimes = userPlaytimesCache[userId] || StorageService.getUserPlaytimes(userId);
+    return calculateGlobalLevel(playtimes);
   };
 
   const getStatusBadge = (status?: string, currentGame?: string) => {
@@ -182,7 +208,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
       onClick={onClose}
     >
       <div 
-        className="relative w-full max-w-2xl rounded-2xl border border-white/15 bg-[#070c1e] text-slate-100 shadow-2xl overflow-hidden my-6"
+        className="relative w-full max-w-3xl rounded-3xl border border-white/15 bg-[#070c1e] text-slate-100 shadow-2xl overflow-hidden my-6"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -193,10 +219,10 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-bold text-white font-['Outfit']">
-                Communauté & Liste d'Amis ONL
+                Communauté & Joueurs ONL
               </h2>
               <p className="text-xs text-slate-400">
-                Suivez vos amis en ligne, découvrez à quoi ils jouent et ajoutez de nouveaux joueurs
+                Visitez les profils, découvrez les vitrines de jeux préférés et suivez les niveaux ONL
               </p>
             </div>
           </div>
@@ -210,11 +236,24 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center border-b border-white/10 bg-black/40 px-6">
+        <div className="flex items-center border-b border-white/10 bg-black/40 px-6 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setActiveTab('explore')}
+            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
+              activeTab === 'explore'
+                ? 'border-cyan-400 text-cyan-300'
+                : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <Compass className="w-4 h-4" />
+            <span>Explorer les Profils ({communityList.length})</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('friends')}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
               activeTab === 'friends'
                 ? 'border-cyan-400 text-cyan-300'
                 : 'border-transparent text-slate-400 hover:text-white'
@@ -223,21 +262,136 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
             <Users className="w-4 h-4" />
             <span>Mes Amis ({friendsList.length})</span>
           </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('search')}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
               activeTab === 'search'
                 ? 'border-cyan-400 text-cyan-300'
                 : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
-            <UserPlus className="w-4 h-4" />
-            <span>Chercher un joueur</span>
+            <Search className="w-4 h-4" />
+            <span>Rechercher un joueur</span>
           </button>
         </div>
 
-        {/* Tab 1: Friends List */}
+        {/* TAB 1: Explore All Community Profiles (Allow visiting other people's pages!) */}
+        {activeTab === 'explore' && (
+          <div className="p-6 space-y-3.5 max-h-[60vh] overflow-y-auto">
+            <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/20 flex items-center justify-between text-xs text-cyan-300">
+              <span className="flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>Cliquez sur <strong>Visiter la vitrine</strong> pour explorer la page d'un joueur, ses heures et ses niveaux.</span>
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {communityList.map((member) => {
+                const isMe = currentUser?.id === member.id;
+                const levelInfo = getUserLevelInfo(member.id);
+                const isFriend = isAlreadyFriend(member.id);
+                const showcaseCount = (member.featuredGameIds && member.featuredGameIds.length > 0)
+                  ? member.featuredGameIds.length
+                  : (member.favorites || []).length;
+
+                return (
+                  <div
+                    key={member.id}
+                    className="p-3.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-cyan-500/40 transition-all flex flex-col justify-between gap-3 group shadow-md"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-white/15 bg-slate-900 shadow-sm">
+                        {member.avatarUrl ? (
+                          <img src={member.avatarUrl} alt={member.username} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className={`w-full h-full ${member.avatarBg || 'bg-cyan-600'} flex items-center justify-center font-bold text-white text-base uppercase`}>
+                            {member.username.charAt(0)}
+                          </div>
+                        )}
+                        <span className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#070c1e]" />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-cyan-300 transition-colors">
+                            {member.username}
+                          </h4>
+                          {isMe && (
+                            <span className="text-[9px] font-mono text-cyan-300 px-1.5 py-0.2 rounded bg-cyan-500/20 border border-cyan-500/30">
+                              VOUS
+                            </span>
+                          )}
+                          {member.isAdmin && (
+                            <span className="text-[9px] font-mono text-purple-300 px-1.5 py-0.2 rounded bg-purple-500/20 border border-purple-500/30">
+                              ADMIN
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Level & Playtime stats */}
+                        <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400 mt-1">
+                          <span className="text-cyan-300 font-bold flex items-center gap-1">
+                            <Zap className="w-3 h-3 text-cyan-400 fill-cyan-400" />
+                            Niveau ONL {levelInfo.level}
+                          </span>
+                          <span>·</span>
+                          <span>{levelInfo.formattedPlaytime}</span>
+                        </div>
+
+                        <div className="mt-1">
+                          {getStatusBadge(member.status, member.currentGameTitle)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card Actions */}
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/5">
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {showcaseCount > 0 ? `${showcaseCount} jeux en vitrine` : 'Vitrine disponible'}
+                      </span>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenUserProfile(member);
+                          }}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 text-xs font-semibold transition-all cursor-pointer shadow-sm"
+                          title="Visiter la page et la vitrine publique"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Visiter la vitrine</span>
+                        </button>
+
+                        {!isMe && currentUser && (
+                          isFriend ? (
+                            <span className="p-1.5 rounded-xl text-emerald-400" title="Déjà dans vos amis">
+                              <UserCheck className="w-4 h-4" />
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleAddFriend(member)}
+                              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                              title="Ajouter en ami"
+                            >
+                              <UserPlus className="w-4 h-4" />
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: Friends List */}
         {activeTab === 'friends' && (
           <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
             {friendsList.length === 0 ? (
@@ -247,83 +401,84 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                   Votre liste d'amis est vide
                 </p>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Recherchez d'autres joueurs par leur pseudo pour les ajouter et voir leurs jeux préférés !
+                  Découvrez les joueurs de la communauté pour visiter leurs vitrines et les ajouter en amis !
                 </p>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('search')}
+                  onClick={() => setActiveTab('explore')}
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 text-xs font-semibold hover:bg-cyan-500/30 transition-all cursor-pointer"
                 >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Chercher des joueurs</span>
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>Explorer les joueurs ONL</span>
                 </button>
               </div>
             ) : (
-              friendsList.map((friend) => (
-                <div
-                  key={friend.id}
-                  className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-white/15 bg-slate-900">
-                      {friend.avatarUrl ? (
-                        <img src={friend.avatarUrl} alt={friend.username} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className={`w-full h-full ${friend.avatarBg || 'bg-cyan-600'} flex items-center justify-center font-bold text-white text-base uppercase`}>
-                          {friend.username.charAt(0)}
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-white truncate">{friend.username}</span>
-                        {friend.isAdmin && (
-                          <span className="text-[9px] font-mono text-purple-300 px-1.5 py-0.2 rounded bg-purple-500/20 border border-purple-500/30">
-                            ADMIN
-                          </span>
+              friendsList.map((friend) => {
+                const levelInfo = getUserLevelInfo(friend.id);
+                return (
+                  <div
+                    key={friend.id}
+                    className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-white/15 bg-slate-900">
+                        {friend.avatarUrl ? (
+                          <img src={friend.avatarUrl} alt={friend.username} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className={`w-full h-full ${friend.avatarBg || 'bg-cyan-600'} flex items-center justify-center font-bold text-white text-base uppercase`}>
+                            {friend.username.charAt(0)}
+                          </div>
                         )}
                       </div>
-                      <div className="mt-0.5">
-                        {getStatusBadge(friend.status, friend.currentGameTitle)}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-white truncate">{friend.username}</span>
+                          <span className="text-[10px] font-mono text-cyan-300 px-1.5 py-0.2 rounded bg-cyan-500/20 border border-cyan-500/30">
+                            Niv. {levelInfo.level}
+                          </span>
+                          {friend.isAdmin && (
+                            <span className="text-[9px] font-mono text-purple-300 px-1.5 py-0.2 rounded bg-purple-500/20 border border-purple-500/30">
+                              ADMIN
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5">
+                          {getStatusBadge(friend.status, friend.currentGameTitle)}
+                        </div>
                       </div>
-                      {friend.bio && (
-                        <p className="text-[11px] text-slate-400 truncate max-w-xs mt-0.5 font-mono">
-                          "{friend.bio}"
-                        </p>
-                      )}
+                    </div>
+
+                    {/* Friend actions */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onOpenUserProfile(friend);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-xs text-cyan-300 font-semibold transition-colors cursor-pointer"
+                        title="Voir le profil et la vitrine de cet ami"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Visiter la vitrine</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFriend(friend.id, friend.username)}
+                        className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                        title="Retirer de mes amis"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
-
-                  {/* Friend actions */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        onOpenUserProfile(friend);
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-cyan-300 font-medium transition-colors cursor-pointer"
-                      title="Voir le profil et la vitrine de cet ami"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Voir Profil</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFriend(friend.id, friend.username)}
-                      className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                      title="Retirer de mes amis"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}
 
-        {/* Tab 2: Search Players */}
+        {/* TAB 3: Search Players */}
         {activeTab === 'search' && (
           <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
             {/* Search Input */}
@@ -352,6 +507,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
               ) : (
                 searchResults.map((user) => {
                   const alreadyFriend = isAlreadyFriend(user.id);
+                  const levelInfo = getUserLevelInfo(user.id);
                   return (
                     <div
                       key={user.id}
@@ -370,6 +526,9 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-bold text-white truncate">{user.username}</span>
+                            <span className="text-[9px] font-mono text-cyan-300 px-1 rounded bg-cyan-500/20">
+                              Niv. {levelInfo.level}
+                            </span>
                             {user.isAdmin && (
                               <span className="text-[9px] font-mono text-purple-300 px-1 py-0.2 rounded bg-purple-500/20">
                                 ADMIN
@@ -389,9 +548,10 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                             onClose();
                             onOpenUserProfile(user);
                           }}
-                          className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] text-slate-300 transition-colors cursor-pointer"
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-[11px] text-cyan-300 transition-colors cursor-pointer"
                         >
-                          Profil
+                          <Eye className="w-3 h-3" />
+                          <span>Visiter</span>
                         </button>
 
                         {alreadyFriend ? (

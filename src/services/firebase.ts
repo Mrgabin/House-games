@@ -323,17 +323,25 @@ export const FirebaseService = {
   async saveGameSave(saveData: Omit<GameSave, 'id' | 'createdAt'> & { id?: string; createdAt?: string }): Promise<string> {
     const savesCollection = collection(db, 'users', saveData.userId, 'saves');
     const newSaveRef = saveData.id ? doc(savesCollection, saveData.id) : doc(savesCollection);
+
+    // Firestore documents have a strict 1MB size limit. If fileData exceeds 800KB, store metadata only
+    const isExceedingFirestoreDocLimit = (saveData.fileData?.length || 0) > 800000;
     const record = {
       gameId: saveData.gameId,
       gameTitle: saveData.gameTitle,
       userId: saveData.userId,
       fileName: saveData.fileName,
       customName: saveData.customName || saveData.fileName,
-      fileData: saveData.fileData,
+      fileData: isExceedingFirestoreDocLimit ? '' : saveData.fileData,
       fileSize: saveData.fileSize,
       createdAt: saveData.createdAt || new Date().toISOString()
     };
-    await setDoc(newSaveRef, record, { merge: true });
+
+    try {
+      await setDoc(newSaveRef, record, { merge: true });
+    } catch (e) {
+      console.warn('[Firebase] Erreur enregistrement sauvegarde Firestore:', e);
+    }
     return newSaveRef.id;
   },
 
@@ -451,5 +459,50 @@ export const FirebaseService = {
         console.warn('Erreur abonnement temps de jeu Firestore:', error);
       }
     );
+  },
+
+  async getAllCommunityUsers(): Promise<User[]> {
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const results: User[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        results.push({
+          id: d.id,
+          email: data.email || '',
+          username: data.username || 'Joueur',
+          isAdmin: Boolean(data.isAdmin),
+          favorites: data.favorites || [],
+          avatarUrl: data.avatarUrl || undefined,
+          avatarBg: data.avatarBg || 'bg-cyan-600',
+          bannerUrl: data.bannerUrl || undefined,
+          bio: data.bio || '',
+          featuredGameIds: data.featuredGameIds || [],
+          friends: data.friends || [],
+          status: data.status || 'online',
+          currentGameTitle: data.currentGameTitle || '',
+          createdAt: data.createdAt || new Date().toISOString()
+        });
+      });
+      return results;
+    } catch (e) {
+      console.warn("Récupération utilisateurs Firestore échouée:", e);
+      return [];
+    }
+  },
+
+  async getUserPlaytimes(userId: string): Promise<Record<string, number>> {
+    if (!userId) return {};
+    try {
+      const snap = await getDocs(collection(db, 'users', userId, 'playtimes'));
+      const map: Record<string, number> = {};
+      snap.forEach((d) => {
+        map[d.id] = d.data().seconds || 0;
+      });
+      return map;
+    } catch (e) {
+      console.warn("Lecture temps de jeu Firestore échouée:", e);
+      return {};
+    }
   }
 };

@@ -14,6 +14,7 @@ import { ChangelogModal } from './components/ChangelogModal';
 import { ProfileSettingsModal } from './components/ProfileSettingsModal';
 import { FriendsModal } from './components/FriendsModal';
 import { PublicProfileModal } from './components/PublicProfileModal';
+import { calculateGlobalLevel } from './utils/level';
 import { 
   Search, 
   Heart, 
@@ -68,6 +69,62 @@ export default function App() {
   // Playtimes & Real Weekly Breakdowns state
   const [userPlaytimes, setUserPlaytimes] = useState<Record<string, number>>({});
   const [userPlaytimeBreakdowns, setUserPlaytimeBreakdowns] = useState<Record<string, DayPlaytimeBreakdown>>({});
+  const [viewingProfilePlaytimes, setViewingProfilePlaytimes] = useState<Record<string, number>>({});
+
+  // Dynamic Global ONL Level (30 min = 1 XP, 10 XP = 1 Niveau)
+  const currentUserLevelInfo = useMemo(() => calculateGlobalLevel(userPlaytimes), [userPlaytimes]);
+
+  // Support direct profile links: ?profile=userId or ?user=userId
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const profileId = params.get('profile') || params.get('user');
+      if (profileId) {
+        const localUsers = StorageService.getUsers();
+        const found = localUsers.find(
+          u => u.id === profileId || u.username.toLowerCase() === profileId.toLowerCase()
+        );
+        if (found) {
+          setViewingProfileUser(found);
+        } else {
+          FirebaseService.getUserProfile(profileId).then(fbUser => {
+            if (fbUser) setViewingProfileUser(fbUser);
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("Erreur lecture URL profile param:", e);
+    }
+  }, []);
+
+  // Fetch or sync playtimes for whichever user is being viewed in PublicProfileModal
+  useEffect(() => {
+    if (!viewingProfileUser) {
+      setViewingProfilePlaytimes({});
+      return;
+    }
+
+    if (currentUser && viewingProfileUser.id === currentUser.id) {
+      setViewingProfilePlaytimes(userPlaytimes);
+      return;
+    }
+
+    // Load initial local playtimes for target user
+    const localMap = StorageService.getUserPlaytimes(viewingProfileUser.id);
+    setViewingProfilePlaytimes(localMap);
+
+    let active = true;
+    // Fetch live from Firestore
+    FirebaseService.getUserPlaytimes(viewingProfileUser.id).then((fbMap) => {
+      if (active && fbMap && Object.keys(fbMap).length > 0) {
+        setViewingProfilePlaytimes(fbMap);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [viewingProfileUser?.id, currentUser?.id, userPlaytimes]);
 
   // Subscribe to real-time Firebase Firestore updates on mount
   useEffect(() => {
@@ -331,6 +388,7 @@ export default function App() {
       {/* Top Navigation Bar with ONL Friends & Profile */}
       <Navbar
         currentUser={currentUser}
+        currentUserLevel={currentUserLevelInfo.level}
         activeView={activeView}
         favoritesCount={favorites.length}
         friendsCount={currentUser?.friends?.length || 0}
@@ -657,6 +715,7 @@ export default function App() {
           isOpen={isProfileSettingsOpen}
           currentUser={currentUser}
           games={games}
+          playtimeSecondsMap={userPlaytimes}
           onClose={() => setIsProfileSettingsOpen(false)}
           onSaveProfile={handleSaveProfile}
         />
@@ -679,7 +738,7 @@ export default function App() {
         user={viewingProfileUser}
         currentUser={currentUser}
         games={games}
-        playtimeSecondsMap={userPlaytimes}
+        playtimeSecondsMap={viewingProfilePlaytimes}
         onClose={() => setViewingProfileUser(null)}
         onOpenSettings={() => {
           setViewingProfileUser(null);
@@ -693,6 +752,11 @@ export default function App() {
           setViewingProfileUser(null);
           setSelectedGameForDetails(g);
         }}
+        onOpenCommunity={() => {
+          setViewingProfileUser(null);
+          setIsFriendsModalOpen(true);
+        }}
+        onShowToast={showToast}
         onAddFriend={async (targetUser) => {
           if (!currentUser) {
             showToast("Veuillez vous connecter pour ajouter des amis.");

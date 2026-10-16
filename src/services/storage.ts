@@ -1,5 +1,6 @@
 import { Game, User, GameSave, DayPlaytimeBreakdown } from '../types';
 import { INITIAL_GAMES } from '../data/defaultGames';
+import { idbSaves } from './indexedDbSaves';
 
 const STORAGE_KEYS = {
   GAMES: 'vesper_vault_games_v1',
@@ -89,12 +90,24 @@ function getFromStorage<T>(key: string, fallback: T): T {
   }
 }
 
-// Helper to safely write to localStorage
-function setToStorage<T>(key: string, value: T): void {
+// Helper to safely write to localStorage without throwing or crashing on quota limits
+function setToStorage<T>(key: string, value: T): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error(`[Storage] Erreur écriture clé ${key}:`, e);
+    return true;
+  } catch (e: any) {
+    if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.number === -2147024882) {
+      console.warn(`[Storage] Quota localStorage atteint pour '${key}'. Stockage IndexedDB pris en relais.`);
+      // If the save key exceeded quota, clear it so other data (favorites, sessions, games) can save freely
+      if (key === 'vesper_vault_saves_v1') {
+        try {
+          localStorage.removeItem(key);
+        } catch (_) {}
+      }
+    } else {
+      console.warn(`[Storage] Impossible d'écrire la clé ${key}:`, e);
+    }
+    return false;
   }
 }
 
@@ -421,9 +434,26 @@ export const StorageService = {
     return getFromStorage<string[]>('vesper_vault_guest_favs', []);
   },
 
-  // === GAME SAVES MANAGEMENT ===
+  // === GAME SAVES MANAGEMENT (Backed by IndexedDB & Safe LocalStorage) ===
   getGameSaves(gameId?: string, userId?: string): GameSave[] {
-    const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
+    const idbItems = idbSaves.getAll();
+    const legacySaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
+
+    // If legacy saves exist in localStorage, import them to IndexedDB and clear the heavy localStorage key
+    if (legacySaves.length > 0) {
+      idbSaves.importFromLegacy(legacySaves);
+      try {
+        localStorage.removeItem('vesper_vault_saves_v1');
+      } catch (_) {}
+    }
+
+    // Merge in-memory / IndexedDB items with legacy
+    const map = new Map<string, GameSave>();
+    legacySaves.forEach(s => map.set(s.id, s));
+    idbItems.forEach(s => map.set(s.id, s));
+
+    const allSaves = Array.from(map.values());
+
     return allSaves.filter(s => {
       if (userId && s.userId !== userId) return false;
       if (gameId && s.gameId !== gameId) return false;
@@ -432,39 +462,60 @@ export const StorageService = {
   },
 
   saveGameSave(saveData: Omit<GameSave, 'id' | 'createdAt'> & { id?: string; createdAt?: string }): GameSave {
-    const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
     const newSave: GameSave = {
       ...saveData,
       id: saveData.id || `save-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdAt: saveData.createdAt || new Date().toISOString()
     };
-    const updated = [newSave, ...allSaves.filter(s => s.id !== newSave.id)];
-    setToStorage('vesper_vault_saves_v1', updated);
+
+    // 1. Save to high-capacity IndexedDB (handles large multi-MB saves with ease)
+    idbSaves.save(newSave);
+
+    // 2. Safe fallback to localStorage only if size is small (< 80KB) and never throw
+    try {
+      if (newSave.fileData && newSave.fileData.length < 80000) {
+        const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
+        const updated = [newSave, ...allSaves.filter(s => s.id !== newSave.id)];
+        setToStorage('vesper_vault_saves_v1', updated);
+      }
+    } catch (_) {}
+
     return newSave;
   },
 
   updateGameSaveName(saveId: string, customName: string): boolean {
-    const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
-    const index = allSaves.findIndex(s => s.id === saveId);
-    if (index === -1) return false;
+    const trimmed = customName.trim();
+    idbSaves.updateName(saveId, trimmed);
 
-    allSaves[index] = {
-      ...allSaves[index],
-      customName: customName.trim(),
-      fileName: customName.trim() || allSaves[index].fileName
-    };
-    setToStorage('vesper_vault_saves_v1', allSaves);
+    try {
+      const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
+      const index = allSaves.findIndex(s => s.id === saveId);
+      if (index !== -1) {
+        allSaves[index] = {
+          ...allSaves[index],
+          customName: trimmed,
+          fileName: trimmed || allSaves[index].fileName
+        };
+        setToStorage('vesper_vault_saves_v1', allSaves);
+      }
+    } catch (_) {}
+
     return true;
   },
 
   deleteGameSave(saveId: string, fileName?: string, gameId?: string): boolean {
-    const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
-    const filtered = allSaves.filter(s => {
-      if (s.id === saveId) return false;
-      if (fileName && s.fileName === fileName && (!gameId || s.gameId === gameId)) return false;
-      return true;
-    });
-    setToStorage('vesper_vault_saves_v1', filtered);
+    idbSaves.delete(saveId);
+
+    try {
+      const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
+      const filtered = allSaves.filter(s => {
+        if (s.id === saveId) return false;
+        if (fileName && s.fileName === fileName && (!gameId || s.gameId === gameId)) return false;
+        return true;
+      });
+      setToStorage('vesper_vault_saves_v1', filtered);
+    } catch (_) {}
+
     return true;
   },
 

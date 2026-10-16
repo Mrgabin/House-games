@@ -10,13 +10,17 @@ import {
   User as UserIcon, 
   Eye, 
   Layers,
-  Palette
+  Palette,
+  Clock,
+  Zap
 } from 'lucide-react';
+import { calculateLevelFromSeconds } from '../utils/level';
 
 interface ProfileSettingsModalProps {
   isOpen: boolean;
   currentUser: User;
   games: Game[];
+  playtimeSecondsMap?: Record<string, number>;
   onClose: () => void;
   onSaveProfile: (updates: Partial<User>) => void;
 }
@@ -50,6 +54,7 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
   isOpen,
   currentUser,
   games,
+  playtimeSecondsMap = {},
   onClose,
   onSaveProfile
 }) => {
@@ -303,12 +308,15 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {games.map((g) => {
                 const isSelected = selectedFeaturedIds.includes(g.id);
+                const sec = playtimeSecondsMap[g.id] || 0;
+                const levelInfo = calculateLevelFromSeconds(sec);
+
                 return (
                   <button
                     type="button"
                     key={g.id}
                     onClick={() => toggleFeaturedGame(g.id)}
-                    className={`relative p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between h-24 ${
+                    className={`relative p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between h-28 ${
                       isSelected
                         ? 'bg-purple-950/60 border-purple-400 text-white shadow-[0_0_15px_rgba(168,85,247,0.3)]'
                         : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
@@ -322,9 +330,21 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                      <span>{g.category}</span>
-                      <span className="text-amber-400">★ {g.rating.toFixed(1)}</span>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-purple-300 font-semibold">
+                          Niv. {levelInfo.level}
+                        </span>
+                        <span className="text-cyan-300 flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5" />
+                          {levelInfo.formattedPlaytime}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                        <span>{g.category}</span>
+                        <span className="text-amber-400">★ {g.rating.toFixed(1)}</span>
+                      </div>
                     </div>
                   </button>
                 );

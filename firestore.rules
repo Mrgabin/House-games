@@ -31,8 +31,8 @@ service cloud.firestore {
 
     // Users collection: Public profiles and friend search
     match /users/{userId} {
-      // Allow signed-in users to read profiles for friend search and public showcase
-      allow read: if isSignedIn();
+      // Allow public read of profiles and playtimes so all players can visit showcases and calculate levels
+      allow read: if true;
       allow write: if isOwner(userId) || isAdmin();
 
       // Subcollection for user saves (capture, upload, rename, delete)
@@ -40,9 +40,9 @@ service cloud.firestore {
         allow read, write: if isOwner(userId) || isAdmin();
       }
 
-      // Subcollection for playtime tracking and stats
+      // Subcollection for playtime tracking and stats (public for Vitrine ONL showcase)
       match /playtimes/{gameId} {
-        allow read: if isSignedIn();
+        allow read: if true;
         allow write: if isOwner(userId) || isAdmin();
       }
 

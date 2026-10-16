@@ -9,11 +9,13 @@ import {
   PlusCircle, 
   Users, 
   Settings,
-  Gamepad2
+  Gamepad2,
+  Zap
 } from 'lucide-react';
 
 interface NavbarProps {
   currentUser: User | null;
+  currentUserLevel?: number;
   activeView: ActiveView;
   favoritesCount: number;
   friendsCount?: number;
@@ -29,6 +31,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
+  currentUserLevel = 0,
   activeView,
   favoritesCount,
   friendsCount = 0,
@@ -95,14 +98,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
-          {/* ONL Friends Hub Trigger */}
+          {/* ONL Community & Friends Hub Trigger */}
           <button
             type="button"
             onClick={onOpenFriends}
             className="whitespace-nowrap shrink-0 transition-colors py-1 flex items-center gap-1.5 text-slate-300 hover:text-cyan-300 cursor-pointer"
+            title="Explorer les profils de la communauté, vitrines de jeux et amis"
           >
             <Users className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Amis ONL</span>
+            <span>Communauté & Joueurs</span>
             {friendsCount > 0 && (
               <span className="ml-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                 {friendsCount}
@@ -133,7 +137,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-12 transition-transform" />
             <span>Mises à jour</span>
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-              v1.8
+              v2.0
             </span>
           </button>
         </nav>
@@ -186,6 +190,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="hidden sm:flex items-center gap-1.5">
                   <span className="font-medium text-slate-200 truncate max-w-[100px] group-hover:text-cyan-300 transition-colors">
                     {currentUser.username}
+                  </span>
+                  <span 
+                    className="text-[10px] font-mono text-cyan-300 px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/30 flex items-center gap-1 font-bold shadow-sm"
+                    title={`Niveau ONL ${currentUserLevel} (calculé : 30 min = 1 XP, 10 XP = 1 Niveau)`}
+                  >
+                    <Zap className="w-2.5 h-2.5 text-cyan-400 fill-cyan-400" />
+                    <span>Niv. {currentUserLevel}</span>
                   </span>
                   {currentUser.isAdmin && (
                     <span className="text-[9px] font-mono text-purple-300 px-1 py-0.2 rounded bg-purple-500/20 border border-purple-500/40">

@@ -39,14 +39,26 @@ export interface GameSave {
   gameTitle: string;
   userId: string;
   fileName: string;
+  customName?: string; // Nom personnalisé ou renommé par l'utilisateur
   fileData: string; // Base64 data URL ou contenu texte
   fileSize: number; // en octets
   createdAt: string;
 }
 
+export interface DayPlaytimeBreakdown {
+  Lun: number; // en secondes
+  Mar: number;
+  Mer: number;
+  Jeu: number;
+  Ven: number;
+  Sam: number;
+  Dim: number;
+}
+
 export interface UserPlaytime {
   gameId: string;
   seconds: number;
+  dayBreakdown?: DayPlaytimeBreakdown;
   lastPlayedAt: string;
 }
 
@@ -57,7 +69,14 @@ export interface User {
   isAdmin: boolean;
   favorites: string[]; // Game IDs
   avatarBg?: string;
+  avatarUrl?: string; // Avatar d'image personnalisé
+  bannerUrl?: string; // Bannière de profil personnalisée
+  bio?: string; // Bio / citation / slogan de profil
+  featuredGameIds?: string[]; // Vitrine publique des jeux préférés
+  friends?: string[]; // Liste des IDs des amis
+  status?: 'online' | 'in-game' | 'away' | 'offline';
+  currentGameTitle?: string;
   createdAt: string;
 }
 
-export type ActiveView = 'catalog' | 'favorites' | 'admin';
+export type ActiveView = 'catalog' | 'favorites' | 'admin' | 'friends' | 'profile';

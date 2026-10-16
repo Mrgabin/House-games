@@ -3,13 +3,42 @@ export interface ChangelogItem {
   title: string;
   date: string;
   badge: 'Majeur' | 'Nouveau' | 'Amélioration' | 'Correctif' | 'Admin' | 'Fondation';
-  category: 'Jeux & WebGL' | 'Admin & Visibilité' | 'Sauvegardes' | 'Temps de jeu' | 'Déploiement Vercel' | 'Fondation';
+  category: 'Jeux & WebGL' | 'Admin & Visibilité' | 'Sauvegardes' | 'Temps de jeu' | 'Déploiement Vercel' | 'Fondation' | 'Communauté & Profil';
   summary: string;
   details: string[];
   tips?: string;
 }
 
 export const CHANGELOG_DATA: ChangelogItem[] = [
+  {
+    version: 'v1.9',
+    title: 'Réseau d\'Amis ONL, Personnalisation Profil & Vitrine, Stats Réelles & Sauvegardes',
+    date: 'Mise à jour en direct',
+    badge: 'Majeur',
+    category: 'Communauté & Profil',
+    summary: 'Système d\'amis ONL complet avec recherche en direct dans Firestore, personnalisation de profil (avatar, bannière, vitrine de jeux), vraies statistiques hebdomadaires et renommage/suppression de toutes les sauvegardes.',
+    details: [
+      'Système d\'amis ONL : Recherche de joueurs par pseudo/email dans Firebase Firestore, ajout d\'amis, statuts en direct (En ligne, En jeu avec titre, Absent, Hors-ligne).',
+      'Personnalisation de profil (ProfileSettingsModal) : Choix d\'avatars cyberpunk ou URL personnalisée, bannière de profil HD, bio/devise, et sélection de jeux favoris pour la vitrine publique.',
+      'Vitrine ONL publique (PublicProfileModal) : Affichage immersif du profil avec bannière, avatar, badge de niveau, compteurs de statistiques, et vitrine de jeux préférés avec lancement direct.',
+      'Statistiques hebdomadaires réelles : Remplacement des calculs statiques par un enregistrement par jour (Lun-Dim) dans le stockage local et Firestore, visualisé sur Recharts avec jours les plus actifs et moyennes.',
+      'Gestion avancée des sauvegardes : Possibilité de renommer n\'importe quel fichier de sauvegarde (importé ou capturé) et de supprimer définitivement sans blocage.'
+    ],
+    tips: 'Cliquez sur « Amis ONL » dans la barre de navigation pour explorer la communauté, ou sur votre avatar pour voir votre vitrine de jeux !'
+  },
+  {
+    version: 'v1.8',
+    title: 'Analyses Recharts & Export des Logs Administrateur (JSON)',
+    date: 'Mise à jour récente',
+    badge: 'Nouveau',
+    category: 'Admin & Visibilité',
+    summary: 'Visualisation graphique avec Recharts du temps de jeu et bouton d\'export des logs récents au format JSON dans la console admin.',
+    details: [
+      'Graphique Recharts interactif intégré dans la modale de détails de jeu pour suivre la répartition hebdomadaire du temps de jeu.',
+      'Bouton d\'export JSON dans la console Admin pour télécharger hors-ligne l\'ensemble des métadonnées, jeux et activités.',
+      'Documentation complète README.md détaillant l\'architecture et toutes les étapes du projet.'
+    ]
+  },
   {
     version: 'v1.7',
     title: 'Suivi du Temps de Jeu Cumulé (Playtime Tracker)',

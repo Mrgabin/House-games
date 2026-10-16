@@ -7,23 +7,19 @@ import {
   deleteDoc, 
   onSnapshot, 
   getDocs, 
+  getDoc,
   getDocFromServer,
-  updateDoc,
-  query,
-  orderBy
+  updateDoc
 } from 'firebase/firestore';
 import { 
   getAuth, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut, 
   onAuthStateChanged,
   GoogleAuthProvider,
-  signInWithPopup,
-  User as FirebaseUser
+  signInWithPopup
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Game, User, GameSave } from '../types';
+import { Game, User, GameSave, DayPlaytimeBreakdown } from '../types';
+import { getWeekdayKey } from './storage';
 
 // Initialize Firebase App singleton
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
@@ -46,8 +42,6 @@ testFirestoreConnection();
 
 export const FirebaseService = {
   // Subscribe to real-time updates from Firebase 'games' collection
-  // If the user adds, edits or deletes a document directly in Firebase,
-  // this listener immediately reflects the change on the live site!
   subscribeGames(onUpdate: (games: Game[]) => void): () => void {
     const gamesCollection = collection(db, 'games');
 
@@ -163,7 +157,7 @@ export const FirebaseService = {
     await updateDoc(gameDocRef, cleanUpdate);
   },
 
-  // User Profile & Favorites in Firestore
+  // === USER PROFILE, CUSTOMIZATION & FRIENDS ===
   async syncUserProfile(user: User): Promise<void> {
     try {
       const userRef = doc(db, 'users', user.id);
@@ -171,11 +165,102 @@ export const FirebaseService = {
         email: user.email,
         username: user.username,
         isAdmin: user.isAdmin,
-        favorites: user.favorites,
+        favorites: user.favorites || [],
+        avatarUrl: user.avatarUrl || '',
+        avatarBg: user.avatarBg || 'bg-cyan-600',
+        bannerUrl: user.bannerUrl || '',
+        bio: user.bio || '',
+        featuredGameIds: user.featuredGameIds || [],
+        friends: user.friends || [],
+        status: user.status || 'online',
+        currentGameTitle: user.currentGameTitle || '',
         updatedAt: new Date().toISOString()
       }, { merge: true });
     } catch (e) {
       console.warn("Sync profil Firestore échoué:", e);
+    }
+  },
+
+  async updateUserProfile(userId: string, updates: Partial<User>): Promise<void> {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const cleanUpdates: Record<string, any> = { updatedAt: new Date().toISOString() };
+      if (updates.username !== undefined) cleanUpdates.username = updates.username.trim();
+      if (updates.avatarUrl !== undefined) cleanUpdates.avatarUrl = updates.avatarUrl.trim();
+      if (updates.avatarBg !== undefined) cleanUpdates.avatarBg = updates.avatarBg;
+      if (updates.bannerUrl !== undefined) cleanUpdates.bannerUrl = updates.bannerUrl.trim();
+      if (updates.bio !== undefined) cleanUpdates.bio = updates.bio.trim();
+      if (updates.featuredGameIds !== undefined) cleanUpdates.featuredGameIds = updates.featuredGameIds;
+      if (updates.friends !== undefined) cleanUpdates.friends = updates.friends;
+      if (updates.status !== undefined) cleanUpdates.status = updates.status;
+      if (updates.currentGameTitle !== undefined) cleanUpdates.currentGameTitle = updates.currentGameTitle;
+
+      await setDoc(userRef, cleanUpdates, { merge: true });
+    } catch (e) {
+      console.warn("Mise à jour profil Firestore échouée:", e);
+    }
+  },
+
+  async searchUsers(searchTerm: string): Promise<User[]> {
+    if (!searchTerm || !searchTerm.trim()) return [];
+    const term = searchTerm.trim().toLowerCase();
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const results: User[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        const username = (data.username || '').toLowerCase();
+        const email = (data.email || '').toLowerCase();
+        if (username.includes(term) || email.includes(term)) {
+          results.push({
+            id: d.id,
+            email: data.email || '',
+            username: data.username || 'Joueur',
+            isAdmin: Boolean(data.isAdmin),
+            favorites: data.favorites || [],
+            avatarUrl: data.avatarUrl || undefined,
+            avatarBg: data.avatarBg || 'bg-cyan-600',
+            bannerUrl: data.bannerUrl || undefined,
+            bio: data.bio || '',
+            featuredGameIds: data.featuredGameIds || [],
+            friends: data.friends || [],
+            status: data.status || 'online',
+            currentGameTitle: data.currentGameTitle || '',
+            createdAt: data.createdAt || new Date().toISOString()
+          });
+        }
+      });
+      return results;
+    } catch (e) {
+      console.warn("Recherche utilisateurs Firestore échouée:", e);
+      return [];
+    }
+  },
+
+  async getUserProfile(userId: string): Promise<User | null> {
+    try {
+      const snap = await getDoc(doc(db, 'users', userId));
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      return {
+        id: snap.id,
+        email: data.email || '',
+        username: data.username || 'Joueur',
+        isAdmin: Boolean(data.isAdmin),
+        favorites: data.favorites || [],
+        avatarUrl: data.avatarUrl || undefined,
+        avatarBg: data.avatarBg || 'bg-cyan-600',
+        bannerUrl: data.bannerUrl || undefined,
+        bio: data.bio || '',
+        featuredGameIds: data.featuredGameIds || [],
+        friends: data.friends || [],
+        status: data.status || 'online',
+        currentGameTitle: data.currentGameTitle || '',
+        createdAt: data.createdAt || new Date().toISOString()
+      };
+    } catch (e) {
+      console.warn("Lecture profil utilisateur Firestore échouée:", e);
+      return null;
     }
   },
 
@@ -195,6 +280,12 @@ export const FirebaseService = {
       isAdmin,
       favorites: [],
       avatarBg: isAdmin ? 'bg-purple-600' : 'bg-cyan-600',
+      avatarUrl: fbUser.photoURL || undefined,
+      bannerUrl: undefined,
+      bio: 'Membre ONL',
+      featuredGameIds: [],
+      friends: [],
+      status: 'online',
       createdAt: new Date().toISOString()
     };
 
@@ -204,27 +295,31 @@ export const FirebaseService = {
 
   // Listen to Firebase Auth state in real time
   subscribeAuthState(onAuthChanged: (user: User | null) => void): () => void {
-    return onAuthStateChanged(auth, (fbUser) => {
+    return onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
-        // Seul galtiergabin76@gmail.com est Administrateur
         const isAdmin = Boolean(fbUser.email && fbUser.email.toLowerCase() === 'galtiergabin76@gmail.com');
-        const user: User = {
-          id: fbUser.uid,
-          email: fbUser.email || 'joueur@housegame.com',
-          username: fbUser.displayName || fbUser.email?.split('@')[0] || (isAdmin ? 'Gabin Galtier' : 'Joueur'),
-          isAdmin,
-          favorites: [],
-          avatarBg: isAdmin ? 'bg-purple-600' : 'bg-cyan-600',
-          createdAt: new Date().toISOString()
-        };
-        onAuthChanged(user);
+        let profile = await FirebaseService.getUserProfile(fbUser.uid);
+        if (!profile) {
+          profile = {
+            id: fbUser.uid,
+            email: fbUser.email || 'joueur@housegame.com',
+            username: fbUser.displayName || fbUser.email?.split('@')[0] || (isAdmin ? 'Gabin Galtier' : 'Joueur'),
+            isAdmin,
+            favorites: [],
+            avatarBg: isAdmin ? 'bg-purple-600' : 'bg-cyan-600',
+            avatarUrl: fbUser.photoURL || undefined,
+            createdAt: new Date().toISOString()
+          };
+          await FirebaseService.syncUserProfile(profile);
+        }
+        onAuthChanged(profile);
       } else {
         onAuthChanged(null);
       }
     });
   },
 
-  // === CLOUD SAVES MANAGEMENT ===
+  // === CLOUD SAVES MANAGEMENT (CREATE, RENAME, DELETE) ===
   async saveGameSave(saveData: Omit<GameSave, 'id' | 'createdAt'>): Promise<string> {
     const savesCollection = collection(db, 'users', saveData.userId, 'saves');
     const newSaveRef = doc(savesCollection);
@@ -233,6 +328,7 @@ export const FirebaseService = {
       gameTitle: saveData.gameTitle,
       userId: saveData.userId,
       fileName: saveData.fileName,
+      customName: saveData.customName || saveData.fileName,
       fileData: saveData.fileData,
       fileSize: saveData.fileSize,
       createdAt: new Date().toISOString()
@@ -260,6 +356,7 @@ export const FirebaseService = {
               gameTitle: d.gameTitle,
               userId: d.userId,
               fileName: d.fileName,
+              customName: d.customName || d.fileName,
               fileData: d.fileData,
               fileSize: d.fileSize || 0,
               createdAt: d.createdAt || new Date().toISOString()
@@ -275,35 +372,64 @@ export const FirebaseService = {
     );
   },
 
-  async deleteGameSave(userId: string, saveId: string): Promise<void> {
-    await deleteDoc(doc(db, 'users', userId, 'saves', saveId));
+  async updateGameSaveName(userId: string, saveId: string, customName: string): Promise<void> {
+    if (!userId || !saveId) return;
+    try {
+      const saveRef = doc(db, 'users', userId, 'saves', saveId);
+      await updateDoc(saveRef, {
+        customName: customName.trim(),
+        fileName: customName.trim(),
+        updatedAt: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('Erreur renommage sauvegarde Firebase:', e);
+    }
   },
 
-  // === USER PLAYTIME TRACKING IN FIRESTORE ===
+  async deleteGameSave(userId: string, saveId: string): Promise<void> {
+    if (!userId || !saveId) return;
+    try {
+      await deleteDoc(doc(db, 'users', userId, 'saves', saveId));
+    } catch (e) {
+      console.warn('Erreur suppression sauvegarde Firebase:', e);
+    }
+  },
+
+  // === REAL PLAYTIME & WEEKLY BREAKDOWN IN FIRESTORE ===
   async recordPlaytime(userId: string, gameId: string, additionalSeconds: number): Promise<void> {
     if (!userId || !gameId || additionalSeconds <= 0) return;
     try {
       const playtimeDocRef = doc(db, 'users', userId, 'playtimes', gameId);
-      // Read current if possible or increment
-      const existingSnap = await getDocs(collection(db, 'users', userId, 'playtimes'));
+      const snap = await getDoc(playtimeDocRef);
       let currentSeconds = 0;
-      existingSnap.forEach(d => {
-        if (d.id === gameId) {
-          currentSeconds = d.data().seconds || 0;
+      let dayBreakdown: DayPlaytimeBreakdown = {
+        Lun: 0, Mar: 0, Mer: 0, Jeu: 0, Ven: 0, Sam: 0, Dim: 0
+      };
+
+      if (snap.exists()) {
+        const data = snap.data();
+        currentSeconds = data.seconds || 0;
+        if (data.dayBreakdown) {
+          dayBreakdown = { ...dayBreakdown, ...data.dayBreakdown };
         }
-      });
+      }
+
+      const today = getWeekdayKey();
+      dayBreakdown[today] = (dayBreakdown[today] || 0) + additionalSeconds;
+
       await setDoc(playtimeDocRef, {
         seconds: currentSeconds + additionalSeconds,
+        dayBreakdown,
         updatedAt: new Date().toISOString()
       }, { merge: true });
     } catch (e) {
-      console.warn('Sync temps de jeu Firebase échoué (sauvegarde locale maintenue):', e);
+      console.warn('Sync temps de jeu Firebase échoué:', e);
     }
   },
 
-  subscribeUserPlaytimes(userId: string, onUpdate: (playtimes: Record<string, number>) => void): () => void {
+  subscribeUserPlaytimes(userId: string, onUpdate: (playtimes: Record<string, number>, breakdowns?: Record<string, DayPlaytimeBreakdown>) => void): () => void {
     if (!userId) {
-      onUpdate({});
+      onUpdate({}, {});
       return () => {};
     }
     const playtimesCollection = collection(db, 'users', userId, 'playtimes');
@@ -311,10 +437,15 @@ export const FirebaseService = {
       playtimesCollection,
       (snapshot) => {
         const map: Record<string, number> = {};
+        const breakdownMap: Record<string, DayPlaytimeBreakdown> = {};
         snapshot.forEach((snap) => {
-          map[snap.id] = snap.data().seconds || 0;
+          const d = snap.data();
+          map[snap.id] = d.seconds || 0;
+          if (d.dayBreakdown) {
+            breakdownMap[snap.id] = d.dayBreakdown;
+          }
         });
-        onUpdate(map);
+        onUpdate(map, breakdownMap);
       },
       (error) => {
         console.warn('Erreur abonnement temps de jeu Firestore:', error);

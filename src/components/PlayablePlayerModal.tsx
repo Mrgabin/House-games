@@ -18,7 +18,9 @@ import {
   CheckCircle2, 
   FolderDown,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  Edit2,
+  Check
 } from 'lucide-react';
 import { getCustomGameHtml } from '../data/customEmbeddedGames';
 import { FirebaseService } from '../services/firebase';
@@ -46,6 +48,8 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
   // Saves Drawer & Notifications
   const [isSavesDrawerOpen, setIsSavesDrawerOpen] = useState(false);
   const [saves, setSaves] = useState<GameSave[]>([]);
+  const [editingSaveId, setEditingSaveId] = useState<string | null>(null);
+  const [editNameInput, setEditNameInput] = useState('');
   const [saveToast, setSaveToast] = useState<{ title: string; subtitle?: string } | null>(null);
 
   // Playtime Tracking
@@ -290,10 +294,41 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
     }
   };
 
-  // Delete save file
+  // Start rename
+  const handleStartRename = (save: GameSave) => {
+    setEditingSaveId(save.id);
+    setEditNameInput(save.customName || save.fileName);
+  };
+
+  // Submit save rename
+  const handleSaveRename = async (saveId: string) => {
+    if (!editNameInput.trim()) return;
+    const newName = editNameInput.trim();
+    StorageService.updateGameSaveName(saveId, newName);
+    if (currentUser) {
+      try {
+        await FirebaseService.updateGameSaveName(currentUser.id, saveId, newName);
+      } catch (e) {
+        console.warn("Erreur renommage Firebase:", e);
+      }
+    }
+    setSaves(prev => prev.map(s => s.id === saveId ? { ...s, fileName: newName, customName: newName } : s));
+    setEditingSaveId(null);
+    setSaveToast({
+      title: "Sauvegarde renommée !",
+      subtitle: `Nouveau libellé : "${newName}"`
+    });
+    setTimeout(() => setSaveToast(null), 3000);
+  };
+
+  // Delete save file (intercepted or imported)
   const handleDeleteSave = async (saveId: string) => {
-    if (!window.confirm("Voulez-vous vraiment supprimer ce fichier de sauvegarde ?")) return;
+    if (!window.confirm("Voulez-vous vraiment supprimer définitivement ce fichier de sauvegarde ?")) return;
+    
+    // 1. Remove from local storage
     StorageService.deleteGameSave(saveId);
+
+    // 2. Remove from Firebase if user logged in
     if (currentUser) {
       try {
         await FirebaseService.deleteGameSave(currentUser.id, saveId);
@@ -301,7 +336,14 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
         console.warn('Erreur suppression Firebase:', e);
       }
     }
+
+    // 3. Immediately update UI state
     setSaves(prev => prev.filter(s => s.id !== saveId));
+    setSaveToast({
+      title: "Sauvegarde supprimée",
+      subtitle: "Le fichier a été retiré de votre compte."
+    });
+    setTimeout(() => setSaveToast(null), 3000);
   };
 
   // Manual save upload from local PC
@@ -622,25 +664,76 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
                         key={save.id}
                         className="p-3 rounded-xl bg-[#0a1233]/80 border border-white/10 hover:border-cyan-500/40 transition-all space-y-2 group"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="space-y-0.5 overflow-hidden">
-                            <p className="text-xs font-bold text-white truncate group-hover:text-cyan-300 transition-colors">
-                              {save.fileName}
-                            </p>
-                            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-                              <span>{dateFormatted}</span>
-                              <span>·</span>
-                              <span className="text-cyan-400/80">{sizeLabel}</span>
-                            </div>
+                        {editingSaveId === save.id ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={editNameInput}
+                              onChange={(e) => setEditNameInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveRename(save.id);
+                                if (e.key === 'Escape') setEditingSaveId(null);
+                              }}
+                              className="flex-1 px-2.5 py-1.5 rounded-lg bg-black/60 border border-cyan-400 text-white text-xs focus:outline-none"
+                              autoFocus
+                              placeholder="Nom de la sauvegarde..."
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveRename(save.id)}
+                              className="p-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold hover:bg-cyan-400 transition-colors cursor-pointer"
+                              title="Valider le nouveau nom"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingSaveId(null)}
+                              className="p-1.5 rounded-lg bg-white/10 text-slate-300 hover:bg-white/20 transition-colors cursor-pointer"
+                              title="Annuler"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-0.5 overflow-hidden">
+                              <p className="text-xs font-bold text-white truncate group-hover:text-cyan-300 transition-colors">
+                                {save.customName || save.fileName}
+                              </p>
+                              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                                <span>{dateFormatted}</span>
+                                <span>·</span>
+                                <span className="text-cyan-400/80">{sizeLabel}</span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleStartRename(save)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-cyan-950/60 transition-colors cursor-pointer shrink-0"
+                              title="Renommer cette sauvegarde"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
 
                         {/* Save Action Buttons */}
                         <div className="flex items-center justify-end gap-2 pt-1 border-t border-white/5">
                           <button
                             type="button"
+                            onClick={() => handleStartRename(save)}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 text-[11px] font-medium transition-colors cursor-pointer"
+                            title="Renommer la sauvegarde"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>Renommer</span>
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => handleDownloadSaveFile(save)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-medium border border-cyan-400/30 transition-all cursor-pointer"
+                            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-medium border border-cyan-400/30 transition-all cursor-pointer"
                             title="Télécharger ce fichier de sauvegarde sur votre ordinateur"
                           >
                             <Download className="w-3.5 h-3.5" />
@@ -650,8 +743,8 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
                           <button
                             type="button"
                             onClick={() => handleDeleteSave(save.id)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                            title="Supprimer cette sauvegarde"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            title="Supprimer définitivement cette sauvegarde"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

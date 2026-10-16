@@ -1,4 +1,4 @@
-import { Game, User } from '../types';
+import { Game, User, GameSave, DayPlaytimeBreakdown } from '../types';
 import { INITIAL_GAMES } from '../data/defaultGames';
 
 const STORAGE_KEYS = {
@@ -10,16 +10,70 @@ const STORAGE_KEYS = {
 export const ADMIN_EMAIL = 'galtiergabin76@gmail.com';
 export const ADMIN_PASSWORD = '111111';
 
-// Pre-seeded Users
+// Pre-seeded Users with ONL-style profile showcases
 const DEFAULT_USERS: User[] = [
   {
     id: 'user-admin-gabin',
     email: ADMIN_EMAIL,
     username: 'Gabin Galtier',
     isAdmin: true,
-    favorites: [],
+    favorites: ['game-1', 'game-2'],
     avatarBg: 'bg-violet-600',
+    avatarUrl: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=150&auto=format&fit=crop&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&auto=format&fit=crop&q=80',
+    bio: 'Fondateur & Administrateur ONL | Développeur WebGL & Cloud Firestore',
+    featuredGameIds: ['game-1', 'game-2', 'game-3'],
+    friends: ['user-player-cyber', 'user-player-neo'],
+    status: 'online',
+    currentGameTitle: 'Polytrack Turbo',
     createdAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'user-player-cyber',
+    email: 'cyber_runner@onl.io',
+    username: 'CyberRunner99',
+    isAdmin: false,
+    favorites: ['game-1'],
+    avatarBg: 'bg-cyan-600',
+    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1200&auto=format&fit=crop&q=80',
+    bio: 'Fan de jeux de course néon et records de vitesse !',
+    featuredGameIds: ['game-1'],
+    friends: ['user-admin-gabin'],
+    status: 'in-game',
+    currentGameTitle: 'Polytrack Turbo',
+    createdAt: '2026-02-10T12:00:00Z',
+  },
+  {
+    id: 'user-player-neo',
+    email: 'neo_matrix@onl.io',
+    username: 'NeoVesper',
+    isAdmin: false,
+    favorites: ['game-3', 'game-4'],
+    avatarBg: 'bg-emerald-600',
+    avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1200&auto=format&fit=crop&q=80',
+    bio: 'Toujours prêt pour une partie coop en WebGL.',
+    featuredGameIds: ['game-3'],
+    friends: ['user-admin-gabin'],
+    status: 'online',
+    currentGameTitle: 'Vesper Survivor',
+    createdAt: '2026-02-15T15:30:00Z',
+  },
+  {
+    id: 'user-player-val',
+    email: 'valkyrie@onl.io',
+    username: 'ValkyrieX',
+    isAdmin: false,
+    favorites: ['game-2'],
+    avatarBg: 'bg-rose-600',
+    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
+    bannerUrl: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=1200&auto=format&fit=crop&q=80',
+    bio: 'Chasseuse de succès et testeuse de jeux indés.',
+    featuredGameIds: ['game-2', 'game-4'],
+    friends: [],
+    status: 'away',
+    createdAt: '2026-03-01T09:00:00Z',
   }
 ];
 
@@ -42,6 +96,13 @@ function setToStorage<T>(key: string, value: T): void {
   } catch (e) {
     console.error(`[Storage] Erreur écriture clé ${key}:`, e);
   }
+}
+
+// Day of week helper: Lun, Mar, Mer, Jeu, Ven, Sam, Dim
+export function getWeekdayKey(): keyof DayPlaytimeBreakdown {
+  const dayIndex = new Date().getDay(); // 0 is Dimanche, 1 is Lundi, etc.
+  const map: (keyof DayPlaytimeBreakdown)[] = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+  return map[dayIndex];
 }
 
 export const StorageService = {
@@ -166,6 +227,61 @@ export const StorageService = {
     return getFromStorage<User | null>(STORAGE_KEYS.CURRENT_USER, null);
   },
 
+  updateUserProfile(userId: string, updates: Partial<User>): User | null {
+    const users = this.getUsers();
+    const index = users.findIndex(u => u.id === userId);
+    if (index === -1) return null;
+
+    const updatedUser: User = {
+      ...users[index],
+      ...updates
+    };
+
+    users[index] = updatedUser;
+    setToStorage(STORAGE_KEYS.USERS, users);
+
+    const current = this.getCurrentUser();
+    if (current && current.id === userId) {
+      setToStorage(STORAGE_KEYS.CURRENT_USER, updatedUser);
+    }
+    return updatedUser;
+  },
+
+  searchUsers(searchTerm: string): User[] {
+    if (!searchTerm || !searchTerm.trim()) return [];
+    const term = searchTerm.trim().toLowerCase();
+    const users = this.getUsers();
+    return users.filter(u => 
+      u.username.toLowerCase().includes(term) || 
+      u.email.toLowerCase().includes(term)
+    );
+  },
+
+  addFriend(userId: string, friendId: string): User | null {
+    if (!userId || !friendId || userId === friendId) return null;
+    const users = this.getUsers();
+    const user = users.find(u => u.id === userId);
+    if (!user) return null;
+
+    const currentFriends = user.friends || [];
+    if (!currentFriends.includes(friendId)) {
+      const updatedFriends = [...currentFriends, friendId];
+      return this.updateUserProfile(userId, { friends: updatedFriends });
+    }
+    return user;
+  },
+
+  removeFriend(userId: string, friendId: string): User | null {
+    if (!userId || !friendId) return null;
+    const users = this.getUsers();
+    const user = users.find(u => u.id === userId);
+    if (!user) return null;
+
+    const currentFriends = user.friends || [];
+    const updatedFriends = currentFriends.filter(id => id !== friendId);
+    return this.updateUserProfile(userId, { friends: updatedFriends });
+  },
+
   register(email: string, password?: string, username?: string): { user?: User; error?: string } {
     const users = this.getUsers();
     const normalizedEmail = email.trim().toLowerCase();
@@ -192,6 +308,12 @@ export const StorageService = {
       isAdmin,
       favorites: [],
       avatarBg,
+      avatarUrl: undefined,
+      bannerUrl: undefined,
+      bio: 'Membre de ONL',
+      featuredGameIds: [],
+      friends: [],
+      status: 'online',
       createdAt: new Date().toISOString(),
     };
 
@@ -217,6 +339,12 @@ export const StorageService = {
         isAdmin: true,
         favorites: this.getCurrentUser()?.favorites || [],
         avatarBg: 'bg-purple-600',
+        avatarUrl: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=150&auto=format&fit=crop&q=80',
+        bannerUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&auto=format&fit=crop&q=80',
+        bio: 'Fondateur & Administrateur ONL | Développeur WebGL',
+        featuredGameIds: ['game-1', 'game-2'],
+        friends: ['user-player-cyber'],
+        status: 'online',
         createdAt: new Date().toISOString()
       };
       setToStorage(STORAGE_KEYS.CURRENT_USER, adminUser);
@@ -231,7 +359,7 @@ export const StorageService = {
       return this.register(email, password, normalizedEmail.split('@')[0]);
     }
 
-    // Ensure normal player does NOT have admin rights
+    // Ensure normal player does NOT have admin rights unless matched
     existing = { ...existing, isAdmin: false };
     setToStorage(STORAGE_KEYS.CURRENT_USER, existing);
     return { user: existing };
@@ -245,7 +373,6 @@ export const StorageService = {
   toggleFavorite(gameId: string): { favorites: string[]; isFavorite: boolean } {
     const currentUser = this.getCurrentUser();
     if (!currentUser) {
-      // Guest favorites stored in guest session
       const guestFavs = getFromStorage<string[]>('vesper_vault_guest_favs', []);
       let updated: string[];
       let isFav: boolean;
@@ -295,8 +422,8 @@ export const StorageService = {
   },
 
   // === GAME SAVES MANAGEMENT ===
-  getGameSaves(gameId?: string, userId?: string): import('../types').GameSave[] {
-    const allSaves = getFromStorage<import('../types').GameSave[]>('vesper_vault_saves_v1', []);
+  getGameSaves(gameId?: string, userId?: string): GameSave[] {
+    const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
     return allSaves.filter(s => {
       if (userId && s.userId !== userId) return false;
       if (gameId && s.gameId !== gameId) return false;
@@ -304,9 +431,9 @@ export const StorageService = {
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
-  saveGameSave(saveData: Omit<import('../types').GameSave, 'id' | 'createdAt'>): import('../types').GameSave {
-    const allSaves = getFromStorage<import('../types').GameSave[]>('vesper_vault_saves_v1', []);
-    const newSave: import('../types').GameSave = {
+  saveGameSave(saveData: Omit<GameSave, 'id' | 'createdAt'>): GameSave {
+    const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
+    const newSave: GameSave = {
       ...saveData,
       id: `save-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       createdAt: new Date().toISOString()
@@ -316,23 +443,74 @@ export const StorageService = {
     return newSave;
   },
 
+  updateGameSaveName(saveId: string, customName: string): boolean {
+    const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
+    const index = allSaves.findIndex(s => s.id === saveId);
+    if (index === -1) return false;
+
+    allSaves[index] = {
+      ...allSaves[index],
+      customName: customName.trim(),
+      fileName: customName.trim() || allSaves[index].fileName
+    };
+    setToStorage('vesper_vault_saves_v1', allSaves);
+    return true;
+  },
+
   deleteGameSave(saveId: string): boolean {
-    const allSaves = getFromStorage<import('../types').GameSave[]>('vesper_vault_saves_v1', []);
+    const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
     const filtered = allSaves.filter(s => s.id !== saveId);
     setToStorage('vesper_vault_saves_v1', filtered);
     return true;
   },
 
-  // === USER PLAYTIME TRACKING ===
-  recordPlaytime(userId: string, gameId: string, additionalSeconds: number): number {
-    if (!userId || !gameId || additionalSeconds <= 0) return 0;
+  // === REAL USER PLAYTIME & WEEKLY BREAKDOWN TRACKING ===
+  recordPlaytime(userId: string, gameId: string, additionalSeconds: number): { totalSeconds: number; dayBreakdown: DayPlaytimeBreakdown } {
+    if (!userId || !gameId || additionalSeconds <= 0) {
+      return { totalSeconds: 0, dayBreakdown: { Lun: 0, Mar: 0, Mer: 0, Jeu: 0, Ven: 0, Sam: 0, Dim: 0 } };
+    }
+
     const playtimesKey = `vesper_vault_playtime_${userId}`;
     const playtimes = getFromStorage<Record<string, number>>(playtimesKey, {});
     const current = playtimes[gameId] || 0;
     const updated = current + additionalSeconds;
     playtimes[gameId] = updated;
     setToStorage(playtimesKey, playtimes);
-    return updated;
+
+    // Track real day breakdown:
+    const breakdownKey = `vesper_vault_breakdown_${userId}_${gameId}`;
+    const currentBreakdown = getFromStorage<DayPlaytimeBreakdown>(breakdownKey, {
+      Lun: 0, Mar: 0, Mer: 0, Jeu: 0, Ven: 0, Sam: 0, Dim: 0
+    });
+    const currentDay = getWeekdayKey();
+    currentBreakdown[currentDay] = (currentBreakdown[currentDay] || 0) + additionalSeconds;
+    setToStorage(breakdownKey, currentBreakdown);
+
+    return { totalSeconds: updated, dayBreakdown: currentBreakdown };
+  },
+
+  getUserPlaytimeRecord(userId: string, gameId: string): { totalSeconds: number; dayBreakdown: DayPlaytimeBreakdown } {
+    if (!userId || !gameId) {
+      return { totalSeconds: 0, dayBreakdown: { Lun: 0, Mar: 0, Mer: 0, Jeu: 0, Ven: 0, Sam: 0, Dim: 0 } };
+    }
+    const playtimesKey = `vesper_vault_playtime_${userId}`;
+    const playtimes = getFromStorage<Record<string, number>>(playtimesKey, {});
+    const total = playtimes[gameId] || 0;
+
+    const breakdownKey = `vesper_vault_breakdown_${userId}_${gameId}`;
+    const currentBreakdown = getFromStorage<DayPlaytimeBreakdown>(breakdownKey, {
+      Lun: 0, Mar: 0, Mer: 0, Jeu: 0, Ven: 0, Sam: 0, Dim: 0
+    });
+
+    // If total exists but breakdown was empty (from before update), assign to today so user sees real data immediately
+    const sumBreakdown = Object.values(currentBreakdown).reduce((a, b) => a + b, 0);
+    if (total > 0 && sumBreakdown === 0) {
+      const today = getWeekdayKey();
+      currentBreakdown[today] = total;
+      setToStorage(breakdownKey, currentBreakdown);
+    }
+
+    return { totalSeconds: total, dayBreakdown: currentBreakdown };
   },
 
   getUserPlaytimes(userId: string): Record<string, number> {

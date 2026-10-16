@@ -29,9 +29,27 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin() || isSignedIn();
     }
 
-    // Users collection: Private user profiles and favorite games
+    // Users collection: Public profiles and friend search
     match /users/{userId} {
-      allow read, write: if isOwner(userId) || isAdmin();
+      // Allow signed-in users to read profiles for friend search and public showcase
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isAdmin();
+
+      // Subcollection for user saves (capture, upload, rename, delete)
+      match /saves/{saveId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      // Subcollection for playtime tracking and stats
+      match /playtimes/{gameId} {
+        allow read: if isSignedIn();
+        allow write: if isOwner(userId) || isAdmin();
+      }
+
+      // Subcollection for friend relationships
+      match /friends/{friendId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
     }
 
     // Admins collection

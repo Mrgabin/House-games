@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Game, GameCategory, User, ActiveView } from './types';
+import { Game, GameCategory, User, ActiveView, DayPlaytimeBreakdown } from './types';
 import { StorageService } from './services/storage';
 import { FirebaseService } from './services/firebase';
 import { CelestialBackground } from './components/CelestialBackground';
@@ -11,6 +11,9 @@ import { PlayablePlayerModal } from './components/PlayablePlayerModal';
 import { AuthModal } from './components/AuthModal';
 import { AdminModal } from './components/AdminModal';
 import { ChangelogModal } from './components/ChangelogModal';
+import { ProfileSettingsModal } from './components/ProfileSettingsModal';
+import { FriendsModal } from './components/FriendsModal';
+import { PublicProfileModal } from './components/PublicProfileModal';
 import { 
   Search, 
   Heart, 
@@ -23,7 +26,8 @@ import {
   Database,
   Lock,
   Unlock,
-  Clock
+  Clock,
+  Users
 } from 'lucide-react';
 
 const CATEGORIES: GameCategory[] = [
@@ -54,12 +58,16 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
   const [isChangelogOpen, setIsChangelogOpen] = useState<boolean>(false);
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState<boolean>(false);
+  const [isFriendsModalOpen, setIsFriendsModalOpen] = useState<boolean>(false);
+  const [viewingProfileUser, setViewingProfileUser] = useState<User | null>(null);
   const [gameToEdit, setGameToEdit] = useState<Game | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isFirebaseSyncing, setIsFirebaseSyncing] = useState<boolean>(true);
 
-  // Playtimes state (per game for current connected user)
+  // Playtimes & Real Weekly Breakdowns state
   const [userPlaytimes, setUserPlaytimes] = useState<Record<string, number>>({});
+  const [userPlaytimeBreakdowns, setUserPlaytimeBreakdowns] = useState<Record<string, DayPlaytimeBreakdown>>({});
 
   // Subscribe to real-time Firebase Firestore updates on mount
   useEffect(() => {
@@ -71,7 +79,7 @@ export default function App() {
     const favs = StorageService.getFavorites();
     setFavorites(favs);
 
-    // 2. Real-time Firebase Auth listener (detects Google signed-in users automatically)
+    // 2. Real-time Firebase Auth listener
     const unsubscribeAuth = FirebaseService.subscribeAuthState((fbUser) => {
       if (fbUser) {
         setCurrentUser(fbUser);
@@ -90,20 +98,31 @@ export default function App() {
     };
   }, []);
 
-  // Sync user playtimes whenever user logs in or changes
+  // Sync user playtimes and real day breakdown whenever user logs in or games change
   useEffect(() => {
     if (currentUser) {
       const local = StorageService.getUserPlaytimes(currentUser.id);
       setUserPlaytimes(local);
 
-      const unsub = FirebaseService.subscribeUserPlaytimes(currentUser.id, (map) => {
+      // Load initial breakdown from local
+      const breakdownMap: Record<string, DayPlaytimeBreakdown> = {};
+      games.forEach(g => {
+        breakdownMap[g.id] = StorageService.getUserPlaytimeRecord(currentUser.id, g.id).dayBreakdown;
+      });
+      setUserPlaytimeBreakdowns(breakdownMap);
+
+      const unsub = FirebaseService.subscribeUserPlaytimes(currentUser.id, (map, fbBreakdowns) => {
         setUserPlaytimes(prev => ({ ...prev, ...map }));
+        if (fbBreakdowns) {
+          setUserPlaytimeBreakdowns(prev => ({ ...prev, ...fbBreakdowns }));
+        }
       });
       return () => unsub();
     } else {
       setUserPlaytimes({});
+      setUserPlaytimeBreakdowns({});
     }
-  }, [currentUser?.id]);
+  }, [currentUser?.id, games.length]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -129,6 +148,22 @@ export default function App() {
     }
   };
 
+  // Profile Settings Handler
+  const handleSaveProfile = async (updates: Partial<User>) => {
+    if (!currentUser) return;
+    const updated = StorageService.updateUserProfile(currentUser.id, updates);
+    if (updated) {
+      setCurrentUser(updated);
+    }
+    try {
+      await FirebaseService.updateUserProfile(currentUser.id, updates);
+      showToast("Profil ONL mis à jour avec succès !");
+    } catch (e) {
+      console.warn("Erreur mise à jour profil Firebase:", e);
+      showToast("Profil mis à jour.");
+    }
+  };
+
   // Handlers for Admin Games Management (writes directly to Firebase Firestore)
   const handleAddGame = async (newGameData: any) => {
     try {
@@ -137,7 +172,6 @@ export default function App() {
       showToast(`"${newGameData.title}" enregistré dans Firebase avec succès !`);
     } catch (e) {
       console.error('Erreur ajout Firebase:', e);
-      // Fallback local
       const created = StorageService.addGame(newGameData);
       setGames(prev => [created, ...prev]);
       showToast(`"${created.title}" ajouté.`);
@@ -189,11 +223,12 @@ export default function App() {
     showToast('La bibliothèque est synchronisée avec Firebase.');
   };
 
-  // Handler for playtime recording
+  // Handler for playtime recording with real weekly breakdown
   const handleRecordPlaytime = async (gameId: string, additionalSeconds: number) => {
     if (!currentUser || additionalSeconds <= 0) return;
-    const updatedSec = StorageService.recordPlaytime(currentUser.id, gameId, additionalSeconds);
-    setUserPlaytimes(prev => ({ ...prev, [gameId]: updatedSec }));
+    const { totalSeconds, dayBreakdown } = StorageService.recordPlaytime(currentUser.id, gameId, additionalSeconds);
+    setUserPlaytimes(prev => ({ ...prev, [gameId]: totalSeconds }));
+    setUserPlaytimeBreakdowns(prev => ({ ...prev, [gameId]: dayBreakdown }));
     try {
       await FirebaseService.recordPlaytime(currentUser.id, gameId, additionalSeconds);
     } catch (e) {
@@ -234,44 +269,45 @@ export default function App() {
   const displayGames = useMemo(() => {
     let result = [...games];
 
-    // Privacy Filter:
-    // Non-admin users NEVER see private test games!
+    // Privacy Filter: Non-admins never see private test games
     if (!currentUser?.isAdmin) {
       result = result.filter(g => !g.isPrivate);
-    } else if (adminVisibilityFilter === 'public') {
-      result = result.filter(g => !g.isPrivate);
-    } else if (adminVisibilityFilter === 'private') {
-      result = result.filter(g => !!g.isPrivate);
+    } else {
+      if (adminVisibilityFilter === 'public') {
+        result = result.filter(g => !g.isPrivate);
+      } else if (adminVisibilityFilter === 'private') {
+        result = result.filter(g => g.isPrivate);
+      }
     }
 
-    // Favorites View Filter
+    // View filter
     if (activeView === 'favorites') {
       result = result.filter(g => favorites.includes(g.id));
     }
 
-    // Category Filter
+    // Category filter
     if (selectedCategory !== 'Tous') {
       result = result.filter(g => g.category === selectedCategory);
     }
 
-    // Search Query Filter
+    // Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter(g => 
         g.title.toLowerCase().includes(q) ||
         g.description.toLowerCase().includes(q) ||
         g.tagline.toLowerCase().includes(q) ||
-        g.category.toLowerCase().includes(q) ||
-        g.tags.some(t => t.toLowerCase().includes(q))
+        g.studio.toLowerCase().includes(q) ||
+        (g.tags && g.tags.some(t => t.toLowerCase().includes(q)))
       );
     }
 
-    // Sort order
-    if (sortBy === 'popular') {
-      result.sort((a, b) => b.playCount - a.playCount);
-    } else if (sortBy === 'rating') {
+    // Sorting
+    if (sortBy === 'rating') {
       result.sort((a, b) => b.rating - a.rating);
-    } else if (sortBy === 'recent') {
+    } else if (sortBy === 'popular') {
+      result.sort((a, b) => b.playCount - a.playCount);
+    } else {
       result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
 
@@ -279,35 +315,42 @@ export default function App() {
   }, [games, activeView, favorites, selectedCategory, searchQuery, sortBy, currentUser?.isAdmin, adminVisibilityFilter]);
 
   return (
-    <div className="relative min-h-screen text-slate-100 flex flex-col font-['Plus_Jakarta_Sans']">
+    <div className="relative min-h-screen bg-[#02030a] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] selection:bg-purple-500 selection:text-white">
       
-      {/* 3D WebGL Spatial Vesper Planet Background */}
+      {/* Three.js Celestial Cyber Background */}
       <CelestialBackground />
 
-      {/* Floating Toast Notification */}
+      {/* Floating Global Toast Notification */}
       {toastMessage && (
-        <aside 
-          aria-live="polite"
-          className="fixed top-20 right-6 z-50 px-4 py-2.5 rounded-xl bg-[#0a1028]/90 border border-purple-500/40 text-purple-200 text-xs font-medium shadow-[0_0_24px_rgba(160,88,255,0.4)] backdrop-blur-md flex items-center gap-2"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-[#08122c]/95 border border-cyan-400/40 text-cyan-200 text-xs font-semibold shadow-[0_0_25px_rgba(76,230,255,0.4)] backdrop-blur-xl animate-in fade-in slide-in-from-bottom-3 duration-300">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
           <span>{toastMessage}</span>
-        </aside>
+        </div>
       )}
 
-      {/* Top Navigation Bar */}
+      {/* Top Navigation Bar with ONL Friends & Profile */}
       <Navbar
         currentUser={currentUser}
         activeView={activeView}
         favoritesCount={favorites.length}
+        friendsCount={currentUser?.friends?.length || 0}
         onSelectView={(view) => setActiveView(view)}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenAdmin={() => setIsAdminModalOpen(true)}
         onOpenChangelog={() => setIsChangelogOpen(true)}
+        onOpenFriends={() => setIsFriendsModalOpen(true)}
+        onOpenProfile={() => {
+          if (currentUser) setViewingProfileUser(currentUser);
+          else setIsAuthModalOpen(true);
+        }}
+        onOpenProfileSettings={() => {
+          if (currentUser) setIsProfileSettingsOpen(true);
+          else setIsAuthModalOpen(true);
+        }}
         onLogout={handleLogout}
       />
 
-      {/* Main App Container */}
+      {/* Main App Container - Clean Framing */}
       <main className="relative z-10 flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         
         {/* Hero Spotlight (shown in catalog view when games exist and no active search) */}
@@ -326,7 +369,7 @@ export default function App() {
           
           <div>
             <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 mb-1">
-              <span>HOUSE GAME</span>
+              <span>ONL NETWORK</span>
               <span aria-hidden="true" className="text-white/20">·</span>
               <span className="text-slate-400 flex items-center gap-1">
                 <Database className="w-3 h-3 text-cyan-400" />
@@ -334,12 +377,12 @@ export default function App() {
               </span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold font-['Outfit'] text-white">
-              {activeView === 'favorites' ? 'Mes Jeux Favoris' : 'Bibliothèque House Game'}
+              {activeView === 'favorites' ? 'Mes Jeux Favoris' : 'Bibliothèque de Jeux ONL'}
             </h2>
             <p className="text-xs text-slate-400 mt-1">
               {activeView === 'favorites'
                 ? `${displayGames.length} jeu${displayGames.length > 1 ? 'x' : ''} sauvegardé${displayGames.length > 1 ? 's' : ''}`
-                : 'Les jeux ajoutés dans Firebase apparaissent instantanément ici.'}
+                : 'Tous les jeux et portages WebGL sont synchronisés en direct.'}
             </p>
           </div>
 
@@ -401,7 +444,7 @@ export default function App() {
 
         </div>
 
-        {/* Interactive Filter Bar & Search (only shown if games exist or search is active) */}
+        {/* Interactive Filter Bar & Search */}
         {(games.length > 0 || searchQuery) && (
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 p-3 sm:p-4 rounded-2xl bg-[#070c1e]/70 border border-white/10 backdrop-blur-md mb-8">
             
@@ -467,7 +510,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Holographic Game Cards Grid */}
+        {/* Game Cards Grid */}
         {displayGames.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {displayGames.map(game => (
@@ -480,41 +523,29 @@ export default function App() {
                 onPlay={(g) => setPlayingGame(g)}
                 onOpenDetails={(g) => setSelectedGameForDetails(g)}
                 onToggleFavorite={handleToggleFavorite}
-                onDeleteGame={handleDeleteGame}
-                onEditGame={currentUser?.isAdmin ? handleEditGame : undefined}
-                onCopyFirebaseId={handleCopyFirebaseId}
               />
             ))}
           </div>
         ) : (
-          /* Empty State when no games in Firebase */
-          <div className="text-center py-20 px-6 rounded-2xl border border-white/10 bg-[#070c1e]/65 backdrop-blur-xl max-w-xl mx-auto shadow-2xl">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-tr from-purple-600/30 to-cyan-500/30 border border-white/15 flex items-center justify-center text-cyan-300 shadow-[0_0_24px_rgba(76,230,255,0.25)]">
-              {activeView === 'favorites' ? (
-                <Heart className="w-7 h-7 text-rose-400/80" />
-              ) : (
-                <Gamepad2 className="w-7 h-7 text-cyan-300" />
-              )}
-            </div>
-
-            <h3 className="text-lg font-bold text-white font-['Outfit']">
-              {activeView === 'favorites' ? 'Aucun favori pour le moment' : 'Bibliothèque House Game prête'}
+          <div className="py-20 text-center rounded-2xl border border-white/5 bg-[#050818]/60 p-8 space-y-4">
+            <Gamepad2 className="w-12 h-12 text-slate-600 mx-auto" />
+            <h3 className="text-base font-bold text-slate-300">
+              {activeView === 'favorites' ? 'Aucun favori pour le moment' : 'Aucun jeu correspondant'}
             </h3>
-
-            <p className="text-xs text-slate-300/80 mt-2 leading-relaxed max-w-md mx-auto">
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
               {activeView === 'favorites'
-                ? 'Vos jeux favoris sauvegardés apparaîtront ici.'
-                : 'La bibliothèque est connectée en direct à Firebase Firestore. Vous pouvez ajouter vos jeux directement depuis Firebase ou via la Console Admin ci-dessous.'}
+                ? 'Cliquez sur le cœur d\'un jeu pour l\'ajouter à votre collection.'
+                : 'Essayez de modifier votre recherche ou de sélectionner une autre catégorie.'}
             </p>
 
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => {
-                  if (!currentUser?.isAdmin) {
-                    setIsAuthModalOpen(true);
-                  } else {
+                  if (currentUser?.isAdmin) {
                     setIsAdminModalOpen(true);
+                  } else {
+                    setIsAuthModalOpen(true);
                   }
                 }}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(160,88,255,0.4)] transition-all cursor-pointer"
@@ -538,14 +569,14 @@ export default function App() {
 
       </main>
 
-      {/* Clean Footer (Clutter free) */}
+      {/* Clean Footer */}
       <footer className="relative z-10 w-full border-t border-white/10 bg-[#02030a]/80 backdrop-blur-md mt-20 py-6 text-xs text-slate-400">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(76,230,255,0.8)]" />
-            <span className="font-['Outfit'] font-bold text-slate-200">House Game</span>
+            <span className="font-['Outfit'] font-bold text-slate-200">ONL</span>
             <span className="text-slate-600">·</span>
-            <span>Bibliothèque de jeux Web</span>
+            <span>Plateforme de Jeux Web & Portages PC</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -555,7 +586,7 @@ export default function App() {
               className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-cyan-300 transition-colors py-1 px-2.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer"
             >
               <Sparkles className="w-3 h-3 text-cyan-400" />
-              <span>Mises à jour (v1.7)</span>
+              <span>Mises à jour (v1.8)</span>
             </button>
 
             <span className="text-slate-600">·</span>
@@ -568,12 +599,13 @@ export default function App() {
       </footer>
 
       {/* MODALS */}
-      {/* 1. Game Details Modal */}
+      {/* 1. Game Details Modal with Real Weekly Playtime Breakdown */}
       <GameDetailsModal
         game={selectedGameForDetails}
         isFavorite={selectedGameForDetails ? favorites.includes(selectedGameForDetails.id) : false}
         isAdmin={currentUser?.isAdmin}
         userPlaytimeSeconds={currentUser && selectedGameForDetails ? (userPlaytimes[selectedGameForDetails.id] || 0) : 0}
+        userPlaytimeBreakdown={currentUser && selectedGameForDetails ? userPlaytimeBreakdowns[selectedGameForDetails.id] : undefined}
         onClose={() => setSelectedGameForDetails(null)}
         onPlay={(game) => setPlayingGame(game)}
         onToggleFavorite={handleToggleFavorite}
@@ -582,7 +614,7 @@ export default function App() {
         onCopyFirebaseId={handleCopyFirebaseId}
       />
 
-      {/* 2. Playable Game Web Player */}
+      {/* 2. Playable Game Web Player with Rename & Delete Saves */}
       <PlayablePlayerModal
         game={playingGame}
         currentUser={currentUser}
@@ -612,10 +644,68 @@ export default function App() {
         onResetDefaults={handleResetDefaults}
       />
 
-      {/* 5. Changelog / Updates History Modal */}
+      {/* 5. Changelog Modal */}
       <ChangelogModal
         isOpen={isChangelogOpen}
         onClose={() => setIsChangelogOpen(false)}
+      />
+
+      {/* 6. ONL Profile Settings Modal */}
+      {currentUser && (
+        <ProfileSettingsModal
+          isOpen={isProfileSettingsOpen}
+          currentUser={currentUser}
+          games={games}
+          onClose={() => setIsProfileSettingsOpen(false)}
+          onSaveProfile={handleSaveProfile}
+        />
+      )}
+
+      {/* 7. ONL Friends Modal */}
+      <FriendsModal
+        isOpen={isFriendsModalOpen}
+        currentUser={currentUser}
+        games={games}
+        onClose={() => setIsFriendsModalOpen(false)}
+        onOpenUserProfile={(user) => setViewingProfileUser(user)}
+        onFriendListUpdated={(user) => setCurrentUser(user)}
+        onShowToast={showToast}
+      />
+
+      {/* 8. ONL Public Profile Modal with Showcase */}
+      <PublicProfileModal
+        isOpen={Boolean(viewingProfileUser)}
+        user={viewingProfileUser}
+        currentUser={currentUser}
+        games={games}
+        playtimeSecondsMap={userPlaytimes}
+        onClose={() => setViewingProfileUser(null)}
+        onOpenSettings={() => {
+          setViewingProfileUser(null);
+          setIsProfileSettingsOpen(true);
+        }}
+        onPlayGame={(g) => {
+          setViewingProfileUser(null);
+          setPlayingGame(g);
+        }}
+        onOpenGameDetails={(g) => {
+          setViewingProfileUser(null);
+          setSelectedGameForDetails(g);
+        }}
+        onAddFriend={async (targetUser) => {
+          if (!currentUser) {
+            showToast("Veuillez vous connecter pour ajouter des amis.");
+            return;
+          }
+          const updated = StorageService.addFriend(currentUser.id, targetUser.id);
+          if (updated) setCurrentUser(updated);
+          try {
+            await FirebaseService.updateUserProfile(currentUser.id, {
+              friends: [...(currentUser.friends || []), targetUser.id]
+            });
+          } catch (e) {}
+          showToast(`"${targetUser.username}" ajouté à vos amis !`);
+        }}
       />
 
     </div>

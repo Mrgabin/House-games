@@ -1,15 +1,29 @@
 import React from 'react';
 import { User, ActiveView } from '../types';
-import { User as UserIcon, Shield, Heart, Sparkles, LogOut, PlusCircle } from 'lucide-react';
+import { 
+  User as UserIcon, 
+  Shield, 
+  Heart, 
+  Sparkles, 
+  LogOut, 
+  PlusCircle, 
+  Users, 
+  Settings,
+  Gamepad2
+} from 'lucide-react';
 
 interface NavbarProps {
   currentUser: User | null;
   activeView: ActiveView;
   favoritesCount: number;
+  friendsCount?: number;
   onSelectView: (view: ActiveView) => void;
   onOpenAuth: () => void;
   onOpenAdmin: () => void;
   onOpenChangelog: () => void;
+  onOpenFriends: () => void;
+  onOpenProfile: () => void;
+  onOpenProfileSettings: () => void;
   onLogout: () => void;
 }
 
@@ -17,15 +31,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
   activeView,
   favoritesCount,
+  friendsCount = 0,
   onSelectView,
   onOpenAuth,
   onOpenAdmin,
   onOpenChangelog,
+  onOpenFriends,
+  onOpenProfile,
+  onOpenProfileSettings,
   onLogout
 }) => {
   return (
-    <header className="sticky top-0 z-30 w-full border-b border-white/10 bg-[#02030a]/75 backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-8 px-4 sm:px-6 py-3.5">
+    <header className="sticky top-0 z-30 w-full border-b border-white/10 bg-[#02030a]/85 backdrop-blur-xl">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 sm:gap-8 px-4 sm:px-6 py-3">
         
         {/* Zone 1: Single text element Brand wordmark */}
         <a 
@@ -38,12 +56,15 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-cyan-400 to-purple-500 shadow-[0_0_10px_rgba(76,230,255,0.8)]" />
           <span className="font-['Outfit'] font-bold tracking-wider uppercase text-base text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-cyan-300">
-            House Game
+            ONL
+          </span>
+          <span className="hidden sm:inline-block text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-950/70 text-cyan-300 border border-cyan-500/30">
+            Vault
           </span>
         </a>
 
-        {/* Zone 2: 4 clean single-line text navigation links */}
-        <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-300">
+        {/* Zone 2: Navigation Links */}
+        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
           <button
             type="button"
             onClick={() => onSelectView('catalog')}
@@ -74,6 +95,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
+          {/* ONL Friends Hub Trigger */}
+          <button
+            type="button"
+            onClick={onOpenFriends}
+            className="whitespace-nowrap shrink-0 transition-colors py-1 flex items-center gap-1.5 text-slate-300 hover:text-cyan-300 cursor-pointer"
+          >
+            <Users className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Amis ONL</span>
+            {friendsCount > 0 && (
+              <span className="ml-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                {friendsCount}
+              </span>
+            )}
+          </button>
+
           {currentUser?.isAdmin && (
             <button
               type="button"
@@ -89,17 +125,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          <a 
-            href="#about"
-            onClick={(e) => {
-              e.preventDefault();
-              window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-            }}
-            className="text-slate-300 hover:text-white transition-colors whitespace-nowrap shrink-0 py-1"
-          >
-            À propos
-          </a>
-
           <button
             type="button"
             onClick={onOpenChangelog}
@@ -108,60 +133,84 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-12 transition-transform" />
             <span>Mises à jour</span>
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-              v1.7
+              v1.8
             </span>
           </button>
         </nav>
 
-        {/* Zone 3: 1 Primary Action */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          {/* Mobile Changelog trigger */}
+        {/* Zone 3: Actions & Profile */}
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          
+          {/* Mobile Amis Button */}
           <button
             type="button"
-            onClick={onOpenChangelog}
-            className="md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/30 text-cyan-300 text-xs font-mono hover:bg-cyan-900/40 transition-colors cursor-pointer"
-            title="Historique des mises à jour"
+            onClick={onOpenFriends}
+            className="md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs hover:text-white cursor-pointer"
+            title="Ouvrir la liste d'amis"
           >
-            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            <span>v1.7</span>
+            <Users className="w-3.5 h-3.5 text-cyan-400" />
+            {friendsCount > 0 && <span className="font-mono text-[10px]">{friendsCount}</span>}
           </button>
+
           {currentUser ? (
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               {/* If Admin, quick add game shortcut */}
               {currentUser.isAdmin && (
                 <button
                   type="button"
                   onClick={onOpenAdmin}
-                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-200 bg-purple-950/60 border border-purple-500/40 rounded-lg hover:bg-purple-900/60 transition-colors whitespace-nowrap shrink-0 shadow-[0_0_14px_rgba(177,116,255,0.2)]"
+                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-200 bg-purple-950/60 border border-purple-500/40 rounded-lg hover:bg-purple-900/60 transition-colors whitespace-nowrap shrink-0 shadow-[0_0_14px_rgba(177,116,255,0.2)]"
                 >
                   <PlusCircle className="w-3.5 h-3.5 text-purple-400" />
-                  <span>Ajouter un jeu</span>
+                  <span>Ajouter jeu</span>
                 </button>
               )}
 
-              {/* User badge with admin badge if elevated */}
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs">
-                <div className={`w-5 h-5 rounded-full ${currentUser.avatarBg || 'bg-violet-600'} flex items-center justify-center text-[10px] font-bold text-white uppercase`}>
-                  {currentUser.username.charAt(0)}
+              {/* ONL User Avatar & Profile Trigger */}
+              <button
+                type="button"
+                onClick={onOpenProfile}
+                className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs transition-all cursor-pointer group"
+                title="Voir mon profil public ONL"
+              >
+                <div className="relative w-6 h-6 sm:w-7 sm:h-7 rounded-lg overflow-hidden shrink-0 border border-cyan-400/50 bg-slate-900">
+                  {currentUser.avatarUrl ? (
+                    <img src={currentUser.avatarUrl} alt={currentUser.username} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className={`w-full h-full ${currentUser.avatarBg || 'bg-violet-600'} flex items-center justify-center text-[11px] font-bold text-white uppercase`}>
+                      {currentUser.username.charAt(0)}
+                    </div>
+                  )}
+                  <span className="absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full bg-emerald-400 ring-1 ring-black" />
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-medium text-slate-200 truncate max-w-[120px]">
+                <div className="hidden sm:flex items-center gap-1.5">
+                  <span className="font-medium text-slate-200 truncate max-w-[100px] group-hover:text-cyan-300 transition-colors">
                     {currentUser.username}
                   </span>
                   {currentUser.isAdmin && (
-                    <span className="text-[10px] font-mono text-purple-300 px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-500/40">
+                    <span className="text-[9px] font-mono text-purple-300 px-1 py-0.2 rounded bg-purple-500/20 border border-purple-500/40">
                       ADMIN
                     </span>
                   )}
                 </div>
-              </div>
+              </button>
+
+              {/* Edit Profile Settings Shortcut */}
+              <button
+                type="button"
+                onClick={onOpenProfileSettings}
+                className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-cyan-300 hover:bg-white/5 border border-transparent hover:border-white/10 transition-colors cursor-pointer"
+                title="Personnaliser mon profil (Avatar, Bannière, Vitrine)"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
 
               {/* Logout button */}
               <button
                 type="button"
                 onClick={onLogout}
                 title="Se déconnecter"
-                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-white/5 transition-colors cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -170,7 +219,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               type="button"
               onClick={onOpenAuth}
-              className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-lg transition-all shadow-[0_0_20px_rgba(160,88,255,0.3)] whitespace-nowrap shrink-0"
+              className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-xl transition-all shadow-[0_0_20px_rgba(160,88,255,0.3)] whitespace-nowrap shrink-0 cursor-pointer"
             >
               <UserIcon className="w-3.5 h-3.5" />
               <span>Se connecter</span>

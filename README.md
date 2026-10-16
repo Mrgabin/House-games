@@ -8,7 +8,14 @@
 
 ## 🚀 Fonctionnalités & Mises à Jour (Historique Complet)
 
-### 📌 v1.8 (Mise à Jour Actuelle)
+### 📌 v1.9 (Dernière Mise à Jour)
+- **Réseau d'Amis ONL (`FriendsModal`)** : Recherche en direct de joueurs par pseudo/email dans Firebase Firestore, gestion de la liste d'amis, statuts de présence temps réel (En ligne, En jeu avec le titre en cours, Absent, Hors-ligne).
+- **Personnalisation de Profil ONL (`ProfileSettingsModal`)** : Choix d'avatars personnalisés ou d'URL externe, sélection de bannières cyberpunk HD, citation/bio de profil et sélection de jeux favoris pour la vitrine publique.
+- **Vitrine ONL Publique (`PublicProfileModal`)** : Affichage immersif du profil joueur avec vitrine de jeux préférés, niveau de joueur, compteurs de statistiques et bouton de lancement rapide.
+- **Statistiques Hebdomadaires Réelles (Recharts)** : Remplacement des données simulées par un décompte réel stocké par jour de la semaine (`Lun` à `Dim`), avec jour le plus actif, moyenne quotidienne et cumul précis.
+- **Renommage & Suppression des Sauvegardes** : Possibilité d'éditer le libellé de chaque sauvegarde (importée ou interceptée) directement dans le tiroir du lecteur et suppression définitive sans blocage.
+
+### 📌 v1.8
 - **Visualisation de Données avec Recharts** : Intégration d'un graphique interactif en bâtonnets (`BarChart`) dans la modale de détails (`GameDetailsModal`) pour visualiser le temps de jeu cumulé et hebdomadaire de l'utilisateur.
 - **Export des Logs Administrateur (JSON)** : Ajout d'une fonctionnalité dans la console `AdminModal` permettant à l'administrateur d'exporter instantanément l'ensemble des activités récentes, statistiques des jeux et événements système au format JSON pour une analyse hors-ligne.
 - **Documentation Complète (README.md)** : Refonte exhaustive du fichier README avec l'image d'illustration d'origine et récapitulatif technique de toutes les versions.

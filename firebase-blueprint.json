@@ -2,7 +2,7 @@
   "entities": {
     "Game": {
       "title": "Game",
-      "description": "Fiche de jeu vidéo PC Web pour la bibliothèque House Game",
+      "description": "Fiche de jeu vidéo PC Web pour la bibliothèque ONL / House Game",
       "type": "object",
       "properties": {
         "title": { "type": "string", "maxLength": 100, "description": "Titre du jeu" },
@@ -21,6 +21,7 @@
         "playCount": { "type": "number", "description": "Nombre de parties lancées" },
         "releaseYear": { "type": "number", "description": "Année de sortie" },
         "isFeatured": { "type": "boolean", "description": "Mise en avant sur la page d'accueil" },
+        "isPrivate": { "type": "boolean", "description": "Jeu en mode privé de test réservé à l'admin" },
         "tags": { "type": "array", "description": "Tags du jeu" },
         "createdAt": { "type": "string", "description": "Date de création ISO" }
       },
@@ -28,26 +29,67 @@
     },
     "UserProfile": {
       "title": "UserProfile",
-      "description": "Profil utilisateur et liste de favoris",
+      "description": "Profil utilisateur, personnalisation ONL-style et liste d'amis",
       "type": "object",
       "properties": {
         "email": { "type": "string", "maxLength": 150, "description": "Email du joueur" },
         "username": { "type": "string", "maxLength": 60, "description": "Pseudo du joueur" },
         "isAdmin": { "type": "boolean", "description": "Droits administrateur" },
         "favorites": { "type": "array", "description": "Liste des identifiants des jeux favoris" },
+        "avatarUrl": { "type": "string", "maxLength": 500, "description": "URL de l'avatar personnalisé" },
+        "avatarBg": { "type": "string", "maxLength": 100, "description": "Couleur ou dégradé de fond d'avatar" },
+        "bannerUrl": { "type": "string", "maxLength": 500, "description": "URL de la bannière de profil personnalisée" },
+        "bio": { "type": "string", "maxLength": 500, "description": "Biographie ou citation de profil" },
+        "featuredGameIds": { "type": "array", "description": "Jeux préférés choisis pour la vitrine publique" },
+        "friends": { "type": "array", "description": "Liste des IDs des amis" },
         "createdAt": { "type": "string", "description": "Date de création du compte" }
       },
       "required": ["email", "username"]
+    },
+    "GameSave": {
+      "title": "GameSave",
+      "description": "Fichier de sauvegarde capturé ou importé",
+      "type": "object",
+      "properties": {
+        "gameId": { "type": "string", "description": "ID du jeu associé" },
+        "gameTitle": { "type": "string", "description": "Titre du jeu" },
+        "userId": { "type": "string", "description": "ID du joueur propriétaire" },
+        "fileName": { "type": "string", "description": "Nom de fichier d'origine" },
+        "customName": { "type": "string", "description": "Nom personnalisé donné par le joueur" },
+        "fileData": { "type": "string", "description": "Contenu du fichier encodé" },
+        "fileSize": { "type": "number", "description": "Taille en octets" },
+        "createdAt": { "type": "string", "description": "Horodatage de sauvegarde" }
+      },
+      "required": ["gameId", "userId", "fileName", "fileData"]
+    },
+    "PlaytimeRecord": {
+      "title": "PlaytimeRecord",
+      "description": "Temps de jeu réel par titre et historique hebdomadaire",
+      "type": "object",
+      "properties": {
+        "seconds": { "type": "number", "description": "Temps cumulé en secondes" },
+        "dayBreakdown": { "type": "object", "description": "Temps par jour de la semaine" },
+        "updatedAt": { "type": "string", "description": "Dernière mise à jour ISO" }
+      },
+      "required": ["seconds"]
     }
   },
   "firestore": {
     "/games/{gameId}": {
       "schema": "Game",
-      "description": "Catalogue de jeux de la bibliothèque House Game"
+      "description": "Catalogue de jeux de la bibliothèque"
     },
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "Profils des joueurs et favoris"
+      "description": "Profils des joueurs, personnalisation et vitrine"
+    },
+    "/users/{userId}/saves/{saveId}": {
+      "schema": "GameSave",
+      "description": "Sauvegardes capturées ou importées d'un joueur"
+    },
+    "/users/{userId}/playtimes/{gameId}": {
+      "schema": "PlaytimeRecord",
+      "description": "Statistiques réelles de temps de jeu par titre"
     }
   }
 }

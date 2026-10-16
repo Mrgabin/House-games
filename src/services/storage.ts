@@ -431,14 +431,14 @@ export const StorageService = {
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
-  saveGameSave(saveData: Omit<GameSave, 'id' | 'createdAt'>): GameSave {
+  saveGameSave(saveData: Omit<GameSave, 'id' | 'createdAt'> & { id?: string; createdAt?: string }): GameSave {
     const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
     const newSave: GameSave = {
       ...saveData,
-      id: `save-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      createdAt: new Date().toISOString()
+      id: saveData.id || `save-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      createdAt: saveData.createdAt || new Date().toISOString()
     };
-    const updated = [newSave, ...allSaves];
+    const updated = [newSave, ...allSaves.filter(s => s.id !== newSave.id)];
     setToStorage('vesper_vault_saves_v1', updated);
     return newSave;
   },
@@ -457,9 +457,13 @@ export const StorageService = {
     return true;
   },
 
-  deleteGameSave(saveId: string): boolean {
+  deleteGameSave(saveId: string, fileName?: string, gameId?: string): boolean {
     const allSaves = getFromStorage<GameSave[]>('vesper_vault_saves_v1', []);
-    const filtered = allSaves.filter(s => s.id !== saveId);
+    const filtered = allSaves.filter(s => {
+      if (s.id === saveId) return false;
+      if (fileName && s.fileName === fileName && (!gameId || s.gameId === gameId)) return false;
+      return true;
+    });
     setToStorage('vesper_vault_saves_v1', filtered);
     return true;
   },

@@ -50,6 +50,8 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
   const [saves, setSaves] = useState<GameSave[]>([]);
   const [editingSaveId, setEditingSaveId] = useState<string | null>(null);
   const [editNameInput, setEditNameInput] = useState('');
+  const [confirmDeleteSaveId, setConfirmDeleteSaveId] = useState<string | null>(null);
+  const [isConfirmingClearAll, setIsConfirmingClearAll] = useState(false);
   const [saveToast, setSaveToast] = useState<{ title: string; subtitle?: string } | null>(null);
 
   // Playtime Tracking
@@ -76,9 +78,7 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
 
       // 2. Subscribe to live Firestore saves
       const unsubscribe = FirebaseService.subscribeGameSaves(currentUser.id, game.id, (cloudSaves) => {
-        if (cloudSaves.length > 0) {
-          setSaves(cloudSaves);
-        }
+        setSaves(cloudSaves);
       });
       return () => unsubscribe();
     } else {
@@ -125,8 +125,10 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
 
     const fileName = data.fileName || `${game.slug || 'jeu'}-save-${new Date().toISOString().slice(0, 10)}.dat`;
     const fileSize = data.fileSize || 0;
+    const saveId = `save-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     const newSaveData = {
+      id: saveId,
       gameId: game.id,
       gameTitle: game.title,
       userId: currentUser?.id || 'guest',
@@ -321,27 +323,48 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
     setTimeout(() => setSaveToast(null), 3000);
   };
 
-  // Delete save file (intercepted or imported)
-  const handleDeleteSave = async (saveId: string) => {
-    if (!window.confirm("Voulez-vous vraiment supprimer définitivement ce fichier de sauvegarde ?")) return;
-    
-    // 1. Remove from local storage
-    StorageService.deleteGameSave(saveId);
+  // Delete save file (intercepted or imported) - 100% safe, no window.confirm blockage
+  const executeDeleteSave = async (save: GameSave) => {
+    // 1. Remove from local storage (both ID and fileName/gameId fallback)
+    StorageService.deleteGameSave(save.id, save.fileName, save.gameId);
 
     // 2. Remove from Firebase if user logged in
     if (currentUser) {
       try {
-        await FirebaseService.deleteGameSave(currentUser.id, saveId);
+        await FirebaseService.deleteGameSave(currentUser.id, save.id);
       } catch (e) {
         console.warn('Erreur suppression Firebase:', e);
       }
     }
 
     // 3. Immediately update UI state
-    setSaves(prev => prev.filter(s => s.id !== saveId));
+    setSaves(prev => prev.filter(s => s.id !== save.id && s.fileName !== save.fileName));
+    setConfirmDeleteSaveId(null);
     setSaveToast({
-      title: "Sauvegarde supprimée",
-      subtitle: "Le fichier a été retiré de votre compte."
+      title: "Sauvegarde supprimée !",
+      subtitle: `"${save.customName || save.fileName}" a été supprimée avec succès.`
+    });
+    setTimeout(() => setSaveToast(null), 3000);
+  };
+
+  // Clear all saves for this game
+  const handleClearAllSaves = async () => {
+    if (!game) return;
+    const savesList = [...saves];
+    for (const s of savesList) {
+      StorageService.deleteGameSave(s.id, s.fileName, s.gameId);
+      if (currentUser) {
+        try {
+          await FirebaseService.deleteGameSave(currentUser.id, s.id);
+        } catch (e) {}
+      }
+    }
+    setSaves([]);
+    setIsConfirmingClearAll(false);
+    setConfirmDeleteSaveId(null);
+    setSaveToast({
+      title: "Toutes les sauvegardes ont été purgées",
+      subtitle: `Les sauvegardes de ${game.title} ont été supprimées.`
     });
     setTimeout(() => setSaveToast(null), 3000);
   };
@@ -617,23 +640,63 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
                   {currentUser ? `Compte : ${currentUser.username}` : 'Mode Invité (local)'}
                 </span>
 
-                {/* Import Save Button */}
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-xs text-cyan-300 border border-white/10 transition-colors cursor-pointer"
-                  title="Importer un fichier de sauvegarde depuis votre PC"
-                >
-                  <Upload className="w-3 h-3" />
-                  <span>Importer</span>
-                </button>
-                <input 
-                  ref={fileInputRef}
-                  type="file" 
-                  className="hidden" 
-                  onChange={handleManualUpload} 
-                />
+                <div className="flex items-center gap-1.5">
+                  {/* Clear All Saves button */}
+                  {saves.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setIsConfirmingClearAll(true)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs border border-rose-500/20 transition-colors cursor-pointer"
+                      title="Supprimer toutes les sauvegardes de ce jeu"
+                    >
+                      <Trash2 className="w-3 h-3 text-rose-400" />
+                      <span>Tout effacer</span>
+                    </button>
+                  )}
+
+                  {/* Import Save Button */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-xs text-cyan-300 border border-white/10 transition-colors cursor-pointer"
+                    title="Importer un fichier de sauvegarde depuis votre PC"
+                  >
+                    <Upload className="w-3 h-3" />
+                    <span>Importer</span>
+                  </button>
+                  <input 
+                    ref={fileInputRef}
+                    type="file" 
+                    className="hidden" 
+                    onChange={handleManualUpload} 
+                  />
+                </div>
               </div>
+
+              {/* Confirm Clear All Banner */}
+              {isConfirmingClearAll && (
+                <div className="p-3 bg-rose-950/90 border-b border-rose-500/40 flex flex-col gap-2 animate-in fade-in duration-150">
+                  <p className="text-xs font-semibold text-rose-200">
+                    Voulez-vous supprimer TOUTES les {saves.length} sauvegardes de ce jeu ?
+                  </p>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsConfirmingClearAll(false)}
+                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearAllSaves}
+                      className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
+                    >
+                      Oui, tout supprimer
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Drawer Saves List */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -718,37 +781,62 @@ export const PlayablePlayerModal: React.FC<PlayablePlayerModalProps> = ({
                           </div>
                         )}
 
-                        {/* Save Action Buttons */}
-                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-white/5">
-                          <button
-                            type="button"
-                            onClick={() => handleStartRename(save)}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 text-[11px] font-medium transition-colors cursor-pointer"
-                            title="Renommer la sauvegarde"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                            <span>Renommer</span>
-                          </button>
+                        {/* Save Action Buttons or Inline Delete Confirmation */}
+                        {confirmDeleteSaveId === save.id ? (
+                          <div className="p-2 rounded-lg bg-rose-950/90 border border-rose-500/50 flex items-center justify-between gap-2 animate-in fade-in duration-150">
+                            <span className="text-rose-200 text-[11px] font-semibold flex items-center gap-1.5 truncate">
+                              <Trash2 className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                              <span>Supprimer définitivement ?</span>
+                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => executeDeleteSave(save)}
+                                className="px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] transition-colors cursor-pointer shadow-sm"
+                              >
+                                Supprimer
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteSaveId(null)}
+                                className="px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-slate-300 text-[11px] transition-colors cursor-pointer"
+                              >
+                                Annuler
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-2 pt-1 border-t border-white/5">
+                            <button
+                              type="button"
+                              onClick={() => handleStartRename(save)}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 text-[11px] font-medium transition-colors cursor-pointer"
+                              title="Renommer la sauvegarde"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>Renommer</span>
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadSaveFile(save)}
-                            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-medium border border-cyan-400/30 transition-all cursor-pointer"
-                            title="Télécharger ce fichier de sauvegarde sur votre ordinateur"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            <span>Télécharger</span>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadSaveFile(save)}
+                              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-medium border border-cyan-400/30 transition-all cursor-pointer"
+                              title="Télécharger ce fichier de sauvegarde sur votre ordinateur"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Télécharger</span>
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSave(save.id)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                            title="Supprimer définitivement cette sauvegarde"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteSaveId(save.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                              title="Supprimer cette sauvegarde"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })

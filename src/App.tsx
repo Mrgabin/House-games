@@ -602,6 +602,7 @@ export default function App() {
       {/* 1. Game Details Modal with Real Weekly Playtime Breakdown */}
       <GameDetailsModal
         game={selectedGameForDetails}
+        currentUser={currentUser}
         isFavorite={selectedGameForDetails ? favorites.includes(selectedGameForDetails.id) : false}
         isAdmin={currentUser?.isAdmin}
         userPlaytimeSeconds={currentUser && selectedGameForDetails ? (userPlaytimes[selectedGameForDetails.id] || 0) : 0}

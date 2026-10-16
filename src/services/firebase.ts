@@ -320,9 +320,9 @@ export const FirebaseService = {
   },
 
   // === CLOUD SAVES MANAGEMENT (CREATE, RENAME, DELETE) ===
-  async saveGameSave(saveData: Omit<GameSave, 'id' | 'createdAt'>): Promise<string> {
+  async saveGameSave(saveData: Omit<GameSave, 'id' | 'createdAt'> & { id?: string; createdAt?: string }): Promise<string> {
     const savesCollection = collection(db, 'users', saveData.userId, 'saves');
-    const newSaveRef = doc(savesCollection);
+    const newSaveRef = saveData.id ? doc(savesCollection, saveData.id) : doc(savesCollection);
     const record = {
       gameId: saveData.gameId,
       gameTitle: saveData.gameTitle,
@@ -331,9 +331,9 @@ export const FirebaseService = {
       customName: saveData.customName || saveData.fileName,
       fileData: saveData.fileData,
       fileSize: saveData.fileSize,
-      createdAt: new Date().toISOString()
+      createdAt: saveData.createdAt || new Date().toISOString()
     };
-    await setDoc(newSaveRef, record);
+    await setDoc(newSaveRef, record, { merge: true });
     return newSaveRef.id;
   },
 

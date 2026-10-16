@@ -13,7 +13,7 @@
 - **Personnalisation de Profil ONL (`ProfileSettingsModal`)** : Choix d'avatars personnalisés ou d'URL externe, sélection de bannières cyberpunk HD, citation/bio de profil et sélection de jeux favoris pour la vitrine publique.
 - **Vitrine ONL Publique (`PublicProfileModal`)** : Affichage immersif du profil joueur avec vitrine de jeux préférés, niveau de joueur, compteurs de statistiques et bouton de lancement rapide.
 - **Statistiques Hebdomadaires Réelles (Recharts)** : Remplacement des données simulées par un décompte réel stocké par jour de la semaine (`Lun` à `Dim`), avec jour le plus actif, moyenne quotidienne et cumul précis.
-- **Renommage & Suppression des Sauvegardes** : Possibilité d'éditer le libellé de chaque sauvegarde (importée ou interceptée) directement dans le tiroir du lecteur et suppression définitive sans blocage.
+- **Renommage & Suppression Sécurisée des Sauvegardes** : Suppression 100% fonctionnelle avec confirmation intégrée dans l'interface (évite les blocages liés à `window.confirm` dans les iframes), bouton « Tout effacer », et accès complet depuis le tiroir du lecteur et la modale de détails.
 
 ### 📌 v1.8
 - **Visualisation de Données avec Recharts** : Intégration d'un graphique interactif en bâtonnets (`BarChart`) dans la modale de détails (`GameDetailsModal`) pour visualiser le temps de jeu cumulé et hebdomadaire de l'utilisateur.

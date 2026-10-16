@@ -22,9 +22,9 @@ export const CHANGELOG_DATA: ChangelogItem[] = [
       'Personnalisation de profil (ProfileSettingsModal) : Choix d\'avatars cyberpunk ou URL personnalisée, bannière de profil HD, bio/devise, et sélection de jeux favoris pour la vitrine publique.',
       'Vitrine ONL publique (PublicProfileModal) : Affichage immersif du profil avec bannière, avatar, badge de niveau, compteurs de statistiques, et vitrine de jeux préférés avec lancement direct.',
       'Statistiques hebdomadaires réelles : Remplacement des calculs statiques par un enregistrement par jour (Lun-Dim) dans le stockage local et Firestore, visualisé sur Recharts avec jours les plus actifs et moyennes.',
-      'Gestion avancée des sauvegardes : Possibilité de renommer n\'importe quel fichier de sauvegarde (importé ou capturé) et de supprimer définitivement sans blocage.'
+      'Gestion avancée des sauvegardes : Suppression 100% fiable sans boîte de dialogue bloquante window.confirm (incompatible iframe), confirmation intégrée directement dans l\'interface (Oui, supprimer / Annuler), option « Tout effacer », et gestion complète des sauvegardes depuis le lecteur ainsi que depuis la fiche de détails du jeu.'
     ],
-    tips: 'Cliquez sur « Amis ONL » dans la barre de navigation pour explorer la communauté, ou sur votre avatar pour voir votre vitrine de jeux !'
+    tips: 'Vous pouvez désormais gérer, renommer, télécharger ou supprimer vos sauvegardes directement dans le tiroir du jeu ou dans la fiche de détails du jeu !'
   },
   {
     version: 'v1.8',

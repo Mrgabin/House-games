@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { Game, DayPlaytimeBreakdown } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Game, DayPlaytimeBreakdown, User, GameSave } from '../types';
+import { StorageService } from '../services/storage';
+import { FirebaseService } from '../services/firebase';
 import { 
   X, 
   Play, 
@@ -12,17 +14,21 @@ import {
   Copy, 
   Check, 
   Clock, 
-  Database,
-  ShieldAlert,
-  BarChart2,
-  Calendar,
-  Flame
+  Database, 
+  ShieldAlert, 
+  BarChart2, 
+  Calendar, 
+  Flame,
+  FolderDown,
+  Download,
+  Edit2
 } from 'lucide-react';
 import { GameArtwork } from './GameArtwork';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 
 interface GameDetailsModalProps {
   game: Game | null;
+  currentUser?: User | null;
   isFavorite: boolean;
   isAdmin?: boolean;
   userPlaytimeSeconds?: number;
@@ -37,6 +43,7 @@ interface GameDetailsModalProps {
 
 export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
   game,
+  currentUser,
   isFavorite,
   isAdmin = false,
   userPlaytimeSeconds = 0,
@@ -49,8 +56,73 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
   onCopyFirebaseId
 }) => {
   const [copiedId, setCopiedId] = useState(false);
+  const [saves, setSaves] = useState<GameSave[]>([]);
+  const [confirmDeleteSaveId, setConfirmDeleteSaveId] = useState<string | null>(null);
+  const [editingSaveId, setEditingSaveId] = useState<string | null>(null);
+  const [editNameInput, setEditNameInput] = useState('');
+  const [saveActionToast, setSaveActionToast] = useState<string | null>(null);
+
+  // Load and subscribe to saves for this game
+  useEffect(() => {
+    if (!game) return;
+    const localSaves = StorageService.getGameSaves(game.id, currentUser?.id);
+    setSaves(localSaves);
+
+    if (currentUser) {
+      const unsub = FirebaseService.subscribeGameSaves(currentUser.id, game.id, (cloudSaves) => {
+        setSaves(cloudSaves);
+      });
+      return () => unsub();
+    }
+  }, [game?.id, currentUser?.id]);
 
   if (!game) return null;
+
+  const handleDownloadSave = (save: GameSave) => {
+    try {
+      const link = document.createElement('a');
+      link.href = save.fileData;
+      link.download = save.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.warn("Erreur téléchargement:", e);
+    }
+  };
+
+  const handleStartRename = (save: GameSave) => {
+    setEditingSaveId(save.id);
+    setEditNameInput(save.customName || save.fileName);
+  };
+
+  const handleSaveRename = async (saveId: string) => {
+    if (!editNameInput.trim()) return;
+    const newName = editNameInput.trim();
+    StorageService.updateGameSaveName(saveId, newName);
+    if (currentUser) {
+      try {
+        await FirebaseService.updateGameSaveName(currentUser.id, saveId, newName);
+      } catch (e) {}
+    }
+    setSaves(prev => prev.map(s => s.id === saveId ? { ...s, fileName: newName, customName: newName } : s));
+    setEditingSaveId(null);
+    setSaveActionToast(`Sauvegarde renommée : "${newName}"`);
+    setTimeout(() => setSaveActionToast(null), 3000);
+  };
+
+  const executeDeleteSave = async (save: GameSave) => {
+    StorageService.deleteGameSave(save.id, save.fileName, save.gameId);
+    if (currentUser) {
+      try {
+        await FirebaseService.deleteGameSave(currentUser.id, save.id);
+      } catch (e) {}
+    }
+    setSaves(prev => prev.filter(s => s.id !== save.id && s.fileName !== save.fileName));
+    setConfirmDeleteSaveId(null);
+    setSaveActionToast(`Sauvegarde "${save.customName || save.fileName}" supprimée avec succès !`);
+    setTimeout(() => setSaveActionToast(null), 3000);
+  };
 
   const handleCopyId = () => {
     navigator.clipboard.writeText(game.id).then(() => {
@@ -322,6 +394,139 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
             <p className="text-xs text-slate-300 font-mono">
               {game.controlsInfo}
             </p>
+          </div>
+
+          {/* Saved Games Management Section */}
+          <div className="rounded-xl border border-white/10 bg-black/40 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-cyan-300 uppercase font-mono tracking-wider">
+                <FolderDown className="w-4 h-4 text-cyan-400" />
+                <span>Sauvegardes du jeu ({saves.length})</span>
+              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                {currentUser ? `Profil : ${currentUser.username}` : 'Stockage Local'}
+              </span>
+            </div>
+
+            {saveActionToast && (
+              <div className="p-2.5 rounded-lg bg-cyan-950/80 border border-cyan-400/40 text-cyan-300 text-xs font-semibold flex items-center gap-2">
+                <Check className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{saveActionToast}</span>
+              </div>
+            )}
+
+            {saves.length === 0 ? (
+              <p className="text-xs text-slate-400 font-mono py-1">
+                Aucune sauvegarde enregistrée pour ce jeu. Vos fichiers de progression apparaîtront ici dès que vous sauvegarderez en jeu ou importerez un fichier.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {saves.map(save => {
+                  const sizeLabel = save.fileSize > 1024 * 1024 
+                    ? `${(save.fileSize / (1024 * 1024)).toFixed(2)} Mo`
+                    : `${(save.fileSize / 1024).toFixed(1)} Ko`;
+                  const dateFormatted = new Date(save.createdAt).toLocaleString('fr-FR', {
+                    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+                  });
+
+                  return (
+                    <div key={save.id} className="p-3 rounded-xl bg-[#070c1e] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      {editingSaveId === save.id ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <input
+                            type="text"
+                            value={editNameInput}
+                            onChange={(e) => setEditNameInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveRename(save.id);
+                              if (e.key === 'Escape') setEditingSaveId(null);
+                            }}
+                            className="flex-1 px-2.5 py-1.5 rounded-lg bg-black/60 border border-cyan-400 text-white text-xs focus:outline-none"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveRename(save.id)}
+                            className="p-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold hover:bg-cyan-400 cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingSaveId(null)}
+                            className="p-1.5 rounded-lg bg-white/10 text-slate-300 hover:bg-white/20 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="overflow-hidden">
+                          <p className="text-xs font-bold text-white truncate">
+                            {save.customName || save.fileName}
+                          </p>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5">
+                            <span>{dateFormatted}</span>
+                            <span>·</span>
+                            <span className="text-cyan-400">{sizeLabel}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {confirmDeleteSaveId === save.id ? (
+                        <div className="flex items-center gap-2 p-1.5 rounded-lg bg-rose-950/80 border border-rose-500/50">
+                          <span className="text-[11px] text-rose-200 font-semibold">Supprimer définitivement ?</span>
+                          <button
+                            type="button"
+                            onClick={() => executeDeleteSave(save)}
+                            className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] cursor-pointer"
+                          >
+                            Supprimer
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteSaveId(null)}
+                            className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-slate-300 text-[11px] cursor-pointer"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleStartRename(save)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 text-xs transition-colors cursor-pointer"
+                            title="Renommer la sauvegarde"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>Renommer</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadSave(save)}
+                            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-medium border border-cyan-400/30 transition-all cursor-pointer"
+                            title="Télécharger le fichier"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Télécharger</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteSaveId(save.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            title="Supprimer la sauvegarde"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Technical Specs, Reviews & Studio */}

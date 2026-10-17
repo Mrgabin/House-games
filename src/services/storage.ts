@@ -1,4 +1,4 @@
-import { Game, User, GameSave, DayPlaytimeBreakdown } from '../types';
+import { Game, User, GameSave, DayPlaytimeBreakdown, UserStatus, StatusPreference } from '../types';
 import { INITIAL_GAMES } from '../data/defaultGames';
 import { idbSaves } from './indexedDbSaves';
 
@@ -24,8 +24,11 @@ const DEFAULT_USERS: User[] = [
     bannerUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&auto=format&fit=crop&q=80',
     bio: 'Fondateur & Administrateur ONL | Développeur WebGL & Cloud Firestore',
     featuredGameIds: ['game-1', 'game-2', 'game-3'],
-    friends: ['user-player-cyber', 'user-player-neo'],
+    friends: ['user-player-cyber'],
+    friendRequestsReceived: ['user-player-neo', 'user-player-val'],
+    friendRequestsSent: [],
     status: 'online',
+    statusPreference: 'auto',
     currentGameTitle: 'Polytrack Turbo',
     createdAt: '2026-01-01T00:00:00Z',
   },
@@ -41,7 +44,10 @@ const DEFAULT_USERS: User[] = [
     bio: 'Fan de jeux de course néon et records de vitesse !',
     featuredGameIds: ['game-1'],
     friends: ['user-admin-gabin'],
+    friendRequestsReceived: [],
+    friendRequestsSent: [],
     status: 'in-game',
+    statusPreference: 'auto',
     currentGameTitle: 'Polytrack Turbo',
     createdAt: '2026-02-10T12:00:00Z',
   },
@@ -56,8 +62,11 @@ const DEFAULT_USERS: User[] = [
     bannerUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1200&auto=format&fit=crop&q=80',
     bio: 'Toujours prêt pour une partie coop en WebGL.',
     featuredGameIds: ['game-3'],
-    friends: ['user-admin-gabin'],
+    friends: [],
+    friendRequestsReceived: [],
+    friendRequestsSent: ['user-admin-gabin'],
     status: 'online',
+    statusPreference: 'auto',
     currentGameTitle: 'Vesper Survivor',
     createdAt: '2026-02-15T15:30:00Z',
   },
@@ -73,7 +82,10 @@ const DEFAULT_USERS: User[] = [
     bio: 'Chasseuse de succès et testeuse de jeux indés.',
     featuredGameIds: ['game-2', 'game-4'],
     friends: [],
+    friendRequestsReceived: [],
+    friendRequestsSent: ['user-admin-gabin'],
     status: 'away',
+    statusPreference: 'auto',
     createdAt: '2026-03-01T09:00:00Z',
   }
 ];
@@ -122,7 +134,7 @@ export const StorageService = {
   // === GAMES MANAGEMENT ===
   getGames(): Game[] {
     const stored = getFromStorage<Game[] | null>(STORAGE_KEYS.GAMES, null);
-    if (!stored || stored.length === 0) {
+    if (stored === null) {
       setToStorage(STORAGE_KEYS.GAMES, INITIAL_GAMES);
       return INITIAL_GAMES;
     }
@@ -295,6 +307,106 @@ export const StorageService = {
     return this.updateUserProfile(userId, { friends: updatedFriends });
   },
 
+  sendFriendRequest(fromUserId: string, toUserId: string): { currentUser: User; targetUser: User } | null {
+    if (!fromUserId || !toUserId || fromUserId === toUserId) return null;
+    const users = this.getUsers();
+    const fromUser = users.find(u => u.id === fromUserId);
+    const toUser = users.find(u => u.id === toUserId);
+    if (!fromUser || !toUser) return null;
+
+    // Already friends?
+    if ((fromUser.friends || []).includes(toUserId)) return null;
+
+    const sent = fromUser.friendRequestsSent || [];
+    const received = toUser.friendRequestsReceived || [];
+
+    const updatedSent = sent.includes(toUserId) ? sent : [...sent, toUserId];
+    const updatedReceived = received.includes(fromUserId) ? received : [...received, fromUserId];
+
+    const updatedFrom = this.updateUserProfile(fromUserId, { friendRequestsSent: updatedSent });
+    const updatedTo = this.updateUserProfile(toUserId, { friendRequestsReceived: updatedReceived });
+
+    if (!updatedFrom || !updatedTo) return null;
+    return { currentUser: updatedFrom, targetUser: updatedTo };
+  },
+
+  acceptFriendRequest(currentUserId: string, requesterUserId: string): { currentUser: User; requesterUser: User } | null {
+    if (!currentUserId || !requesterUserId) return null;
+    const users = this.getUsers();
+    const currentUser = users.find(u => u.id === currentUserId);
+    const requesterUser = users.find(u => u.id === requesterUserId);
+    if (!currentUser || !requesterUser) return null;
+
+    // Remove from requests
+    const updatedReceived = (currentUser.friendRequestsReceived || []).filter(id => id !== requesterUserId);
+    const updatedSent = (requesterUser.friendRequestsSent || []).filter(id => id !== currentUserId);
+
+    // Add each other to friends
+    const currentFriends = currentUser.friends || [];
+    const requesterFriends = requesterUser.friends || [];
+
+    const updatedCurrentFriends = currentFriends.includes(requesterUserId) ? currentFriends : [...currentFriends, requesterUserId];
+    const updatedRequesterFriends = requesterFriends.includes(currentUserId) ? requesterFriends : [...requesterFriends, currentUserId];
+
+    const updatedCurrent = this.updateUserProfile(currentUserId, {
+      friends: updatedCurrentFriends,
+      friendRequestsReceived: updatedReceived
+    });
+
+    const updatedRequester = this.updateUserProfile(requesterUserId, {
+      friends: updatedRequesterFriends,
+      friendRequestsSent: updatedSent
+    });
+
+    if (!updatedCurrent || !updatedRequester) return null;
+    return { currentUser: updatedCurrent, requesterUser: updatedRequester };
+  },
+
+  rejectFriendRequest(currentUserId: string, requesterUserId: string): User | null {
+    if (!currentUserId || !requesterUserId) return null;
+    const users = this.getUsers();
+    const currentUser = users.find(u => u.id === currentUserId);
+    const requesterUser = users.find(u => u.id === requesterUserId);
+    if (!currentUser) return null;
+
+    const updatedReceived = (currentUser.friendRequestsReceived || []).filter(id => id !== requesterUserId);
+    if (requesterUser) {
+      const updatedSent = (requesterUser.friendRequestsSent || []).filter(id => id !== currentUserId);
+      this.updateUserProfile(requesterUserId, { friendRequestsSent: updatedSent });
+    }
+
+    return this.updateUserProfile(currentUserId, { friendRequestsReceived: updatedReceived });
+  },
+
+  cancelFriendRequest(currentUserId: string, targetUserId: string): User | null {
+    if (!currentUserId || !targetUserId) return null;
+    const users = this.getUsers();
+    const currentUser = users.find(u => u.id === currentUserId);
+    const targetUser = users.find(u => u.id === targetUserId);
+    if (!currentUser) return null;
+
+    const updatedSent = (currentUser.friendRequestsSent || []).filter(id => id !== targetUserId);
+    if (targetUser) {
+      const updatedReceived = (targetUser.friendRequestsReceived || []).filter(id => id !== currentUserId);
+      this.updateUserProfile(targetUserId, { friendRequestsReceived: updatedReceived });
+    }
+
+    return this.updateUserProfile(currentUserId, { friendRequestsSent: updatedSent });
+  },
+
+  updateUserStatus(
+    userId: string, 
+    status: UserStatus, 
+    currentGameTitle?: string,
+    statusPreference?: StatusPreference
+  ): User | null {
+    if (!userId) return null;
+    const updates: Partial<User> = { status };
+    if (currentGameTitle !== undefined) updates.currentGameTitle = currentGameTitle;
+    if (statusPreference !== undefined) updates.statusPreference = statusPreference;
+    return this.updateUserProfile(userId, updates);
+  },
+
   register(email: string, password?: string, username?: string): { user?: User; error?: string } {
     const users = this.getUsers();
     const normalizedEmail = email.trim().toLowerCase();
@@ -356,8 +468,11 @@ export const StorageService = {
         bannerUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&auto=format&fit=crop&q=80',
         bio: 'Fondateur & Administrateur ONL | Développeur WebGL',
         featuredGameIds: ['game-1', 'game-2'],
-        friends: ['user-player-cyber'],
-        status: 'online',
+        friends: this.getCurrentUser()?.friends || ['user-player-cyber'],
+        friendRequestsReceived: this.getCurrentUser()?.friendRequestsReceived || ['user-player-neo', 'user-player-val'],
+        friendRequestsSent: this.getCurrentUser()?.friendRequestsSent || [],
+        status: this.getCurrentUser()?.status || 'online',
+        statusPreference: this.getCurrentUser()?.statusPreference || 'auto',
         createdAt: new Date().toISOString()
       };
       setToStorage(STORAGE_KEYS.CURRENT_USER, adminUser);

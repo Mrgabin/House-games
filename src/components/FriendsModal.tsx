@@ -7,15 +7,17 @@ import {
   Search, 
   UserCheck, 
   Gamepad2, 
-  ExternalLink, 
   Trash2, 
   Check, 
   Clock, 
-  ShieldCheck,
-  Eye,
-  Sparkles,
-  Zap,
-  Compass
+  Eye, 
+  Sparkles, 
+  Zap, 
+  Compass,
+  Bell,
+  UserX,
+  Send,
+  Inbox
 } from 'lucide-react';
 import { FirebaseService } from '../services/firebase';
 import { StorageService } from '../services/storage';
@@ -40,7 +42,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   onFriendListUpdated,
   onShowToast
 }) => {
-  const [activeTab, setActiveTab] = useState<'friends' | 'explore' | 'search'>('explore');
+  const [activeTab, setActiveTab] = useState<'explore' | 'friends' | 'requests' | 'search'>('explore');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -48,7 +50,11 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   const [communityList, setCommunityList] = useState<User[]>([]);
   const [userPlaytimesCache, setUserPlaytimesCache] = useState<Record<string, Record<string, number>>>({});
 
-  // Load and refresh friends and community members
+  // Incoming and outgoing requests users
+  const [incomingRequesters, setIncomingRequesters] = useState<User[]>([]);
+  const [outgoingTargets, setOutgoingTargets] = useState<User[]>([]);
+
+  // Load and refresh friends, community, and pending friend requests
   useEffect(() => {
     if (!isOpen) return;
 
@@ -63,13 +69,27 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
       }
     });
 
-    // 3. Load friends for current user
+    // 3. Load friends & request relations for current user
     if (currentUser) {
       const myFriendIds = currentUser.friends || [];
       const loadedFriends = localUsers.filter(u => myFriendIds.includes(u.id));
       setFriendsList(loadedFriends);
+
+      const incomingIds = currentUser.friendRequestsReceived || [];
+      const loadedIncoming = localUsers.filter(u => incomingIds.includes(u.id));
+      setIncomingRequesters(loadedIncoming);
+
+      const outgoingIds = currentUser.friendRequestsSent || [];
+      const loadedOutgoing = localUsers.filter(u => outgoingIds.includes(u.id));
+      setOutgoingTargets(loadedOutgoing);
     }
-  }, [isOpen, currentUser?.friends, currentUser?.id]);
+  }, [
+    isOpen, 
+    currentUser?.friends, 
+    currentUser?.friendRequestsReceived, 
+    currentUser?.friendRequestsSent, 
+    currentUser?.id
+  ]);
 
   // Preload playtimes cache for displayed users so levels calculate instantly
   useEffect(() => {
@@ -110,32 +130,90 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleAddFriend = async (targetUser: User) => {
+  // SEND Friend Request (Does not auto-friend; target must validate)
+  const handleSendFriendRequest = async (targetUser: User) => {
     if (!currentUser) {
-      onShowToast("Veuillez vous connecter pour ajouter des amis.");
+      onShowToast("Veuillez vous connecter pour envoyer une demande d'ami.");
       return;
     }
 
-    const updatedUser = StorageService.addFriend(currentUser.id, targetUser.id);
-    if (updatedUser) {
-      onFriendListUpdated(updatedUser);
+    const res = StorageService.sendFriendRequest(currentUser.id, targetUser.id);
+    if (res) {
+      onFriendListUpdated(res.currentUser);
+      setOutgoingTargets(prev => [...prev.filter(u => u.id !== targetUser.id), targetUser]);
     }
 
     try {
-      const newFriends = [...(currentUser.friends || []), targetUser.id];
-      await FirebaseService.updateUserProfile(currentUser.id, { friends: newFriends });
+      await FirebaseService.sendFriendRequest(currentUser.id, targetUser.id);
     } catch (e) {
-      console.warn("Erreur ajout ami Firebase:", e);
+      console.warn("Erreur envoi demande d'ami Firebase:", e);
     }
 
-    setFriendsList(prev => [...prev.filter(f => f.id !== targetUser.id), targetUser]);
-    onShowToast(`"${targetUser.username}" ajouté à votre liste d'amis !`);
+    onShowToast(`Demande d'ami envoyée à ${targetUser.username} ! En attente de sa validation.`);
   };
 
+  // ACCEPT Friend Request (Validate friend request)
+  const handleAcceptFriendRequest = async (requesterUser: User) => {
+    if (!currentUser) return;
+
+    const res = StorageService.acceptFriendRequest(currentUser.id, requesterUser.id);
+    if (res) {
+      onFriendListUpdated(res.currentUser);
+      setFriendsList(prev => [...prev.filter(f => f.id !== requesterUser.id), requesterUser]);
+      setIncomingRequesters(prev => prev.filter(u => u.id !== requesterUser.id));
+    }
+
+    try {
+      await FirebaseService.acceptFriendRequest(currentUser.id, requesterUser.id);
+    } catch (e) {
+      console.warn("Erreur acceptation ami Firebase:", e);
+    }
+
+    onShowToast(`Demande acceptée ! ${requesterUser.username} est désormais votre ami sur ONL.`);
+  };
+
+  // REJECT Friend Request
+  const handleRejectFriendRequest = async (requesterUser: User) => {
+    if (!currentUser) return;
+
+    const updatedUser = StorageService.rejectFriendRequest(currentUser.id, requesterUser.id);
+    if (updatedUser) {
+      onFriendListUpdated(updatedUser);
+      setIncomingRequesters(prev => prev.filter(u => u.id !== requesterUser.id));
+    }
+
+    try {
+      await FirebaseService.rejectFriendRequest(currentUser.id, requesterUser.id);
+    } catch (e) {
+      console.warn("Erreur rejet ami Firebase:", e);
+    }
+
+    onShowToast(`Demande d'ami de ${requesterUser.username} refusée.`);
+  };
+
+  // CANCEL Sent Friend Request
+  const handleCancelFriendRequest = async (targetUser: User) => {
+    if (!currentUser) return;
+
+    const updatedUser = StorageService.cancelFriendRequest(currentUser.id, targetUser.id);
+    if (updatedUser) {
+      onFriendListUpdated(updatedUser);
+      setOutgoingTargets(prev => prev.filter(u => u.id !== targetUser.id));
+    }
+
+    try {
+      await FirebaseService.cancelFriendRequest(currentUser.id, targetUser.id);
+    } catch (e) {
+      console.warn("Erreur annulation demande ami Firebase:", e);
+    }
+
+    onShowToast(`Demande d'ami pour ${targetUser.username} annulée.`);
+  };
+
+  // REMOVE Friend
   const handleRemoveFriend = async (targetUserId: string, targetName: string) => {
     if (!currentUser) return;
 
-    // Instant removal without blocking window.confirm prompt
     const updatedUser = StorageService.removeFriend(currentUser.id, targetUserId);
     if (updatedUser) {
       onFriendListUpdated(updatedUser);
@@ -154,6 +232,14 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
   const isAlreadyFriend = (userId: string) => {
     return (currentUser?.friends || []).includes(userId);
+  };
+
+  const hasSentRequestTo = (userId: string) => {
+    return (currentUser?.friendRequestsSent || []).includes(userId);
+  };
+
+  const hasReceivedRequestFrom = (userId: string) => {
+    return (currentUser?.friendRequestsReceived || []).includes(userId);
   };
 
   const getUserLevelInfo = (userId: string) => {
@@ -181,26 +267,28 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
       case 'online':
         return (
           <span className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />
             <span>En ligne</span>
           </span>
         );
       case 'away':
         return (
           <span className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-300">
-            <span className="w-2 h-2 rounded-full bg-amber-400" />
-            <span>Absent</span>
+            <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.7)]" />
+            <span>Inactif / Absent</span>
           </span>
         );
       default:
         return (
           <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
             <span className="w-2 h-2 rounded-full bg-slate-500" />
-            <span>Hors-ligne</span>
+            <span>Hors-ligne / Invisible</span>
           </span>
         );
     }
   };
+
+  const incomingCount = (currentUser?.friendRequestsReceived || []).length;
 
   return (
     <div 
@@ -222,7 +310,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                 Communauté & Joueurs ONL
               </h2>
               <p className="text-xs text-slate-400">
-                Visitez les profils, découvrez les vitrines de jeux préférés et suivez les niveaux ONL
+                Gérez vos amis, validez les demandes d'amis et visitez les vitrines des joueurs
               </p>
             </div>
           </div>
@@ -235,7 +323,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Navigation */}
+        {/* Tab Navigation with Dedicated "Demandes d'amis" Tab */}
         <div className="flex items-center border-b border-white/10 bg-black/40 px-6 overflow-x-auto">
           <button
             type="button"
@@ -247,7 +335,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
             }`}
           >
             <Compass className="w-4 h-4" />
-            <span>Explorer les Profils ({communityList.length})</span>
+            <span>Explorer ({communityList.length})</span>
           </button>
 
           <button
@@ -263,6 +351,29 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
             <span>Mes Amis ({friendsList.length})</span>
           </button>
 
+          {/* Dedicated Tab for Friend Requests to validate */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('requests')}
+            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer whitespace-nowrap relative ${
+              activeTab === 'requests'
+                ? 'border-purple-400 text-purple-300'
+                : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <Bell className="w-4 h-4" />
+            <span>Demandes d'amis</span>
+            {incomingCount > 0 ? (
+              <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white font-mono text-[10px] font-bold animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]">
+                {incomingCount} à valider
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono text-slate-500">
+                (0)
+              </span>
+            )}
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('search')}
@@ -273,11 +384,11 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
             }`}
           >
             <Search className="w-4 h-4" />
-            <span>Rechercher un joueur</span>
+            <span>Rechercher</span>
           </button>
         </div>
 
-        {/* TAB 1: Explore All Community Profiles (Allow visiting other people's pages!) */}
+        {/* TAB 1: Explore All Community Profiles */}
         {activeTab === 'explore' && (
           <div className="p-6 space-y-3.5 max-h-[60vh] overflow-y-auto">
             <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/20 flex items-center justify-between text-xs text-cyan-300">
@@ -292,6 +403,8 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                 const isMe = currentUser?.id === member.id;
                 const levelInfo = getUserLevelInfo(member.id);
                 const isFriend = isAlreadyFriend(member.id);
+                const hasSent = hasSentRequestTo(member.id);
+                const hasReceived = hasReceivedRequestFrom(member.id);
                 const showcaseCount = (member.featuredGameIds && member.featuredGameIds.length > 0)
                   ? member.featuredGameIds.length
                   : (member.favorites || []).length;
@@ -346,7 +459,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Card Actions */}
+                    {/* Card Actions with Friend Request Logic */}
                     <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/5">
                       <span className="text-[10px] font-mono text-slate-400">
                         {showcaseCount > 0 ? `${showcaseCount} jeux en vitrine` : 'Vitrine disponible'}
@@ -359,26 +472,48 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                             onClose();
                             onOpenUserProfile(member);
                           }}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 text-xs font-semibold transition-all cursor-pointer shadow-sm"
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 text-xs font-semibold transition-all cursor-pointer shadow-sm"
                           title="Visiter la page et la vitrine publique"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          <span>Visiter la vitrine</span>
+                          <span>Vitrine</span>
                         </button>
 
                         {!isMe && currentUser && (
                           isFriend ? (
-                            <span className="p-1.5 rounded-xl text-emerald-400" title="Déjà dans vos amis">
-                              <UserCheck className="w-4 h-4" />
+                            <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold">
+                              <UserCheck className="w-3.5 h-3.5" />
+                              <span>Amis</span>
                             </span>
+                          ) : hasReceived ? (
+                            <button
+                              type="button"
+                              onClick={() => handleAcceptFriendRequest(member)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md transition-all cursor-pointer"
+                              title="Valider cette demande d'ami reçue"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Valider</span>
+                            </button>
+                          ) : hasSent ? (
+                            <button
+                              type="button"
+                              onClick={() => handleCancelFriendRequest(member)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-white/10 text-xs transition-colors cursor-pointer"
+                              title="Annuler la demande d'ami envoyée"
+                            >
+                              <UserX className="w-3.5 h-3.5" />
+                              <span>En attente...</span>
+                            </button>
                           ) : (
                             <button
                               type="button"
-                              onClick={() => handleAddFriend(member)}
-                              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-colors cursor-pointer"
-                              title="Ajouter en ami"
+                              onClick={() => handleSendFriendRequest(member)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-xs font-semibold transition-all cursor-pointer shadow-sm"
+                              title="Envoyer une demande d'ami"
                             >
-                              <UserPlus className="w-4 h-4" />
+                              <UserPlus className="w-3.5 h-3.5 text-purple-300" />
+                              <span>Demander</span>
                             </button>
                           )
                         )}
@@ -401,7 +536,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                   Votre liste d'amis est vide
                 </p>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Découvrez les joueurs de la communauté pour visiter leurs vitrines et les ajouter en amis !
+                  Découvrez les joueurs de la communauté pour leur envoyer une demande d'ami ou visitez leurs vitrines !
                 </p>
                 <button
                   type="button"
@@ -478,7 +613,161 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
           </div>
         )}
 
-        {/* TAB 3: Search Players */}
+        {/* TAB 3: FRIEND REQUESTS (Incoming to validate & Outgoing) */}
+        {activeTab === 'requests' && (
+          <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+            {/* Section A: Demandes Reçues (À valider par vous-même) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <Inbox className="w-4 h-4 text-rose-400" />
+                  <h3 className="text-xs sm:text-sm font-bold text-white uppercase font-mono tracking-wider">
+                    Demandes d'amis reçues
+                  </h3>
+                </div>
+                <span className="text-xs font-mono font-bold text-rose-300 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/30">
+                  {incomingRequesters.length} en attente
+                </span>
+              </div>
+
+              {incomingRequesters.length === 0 ? (
+                <div className="py-6 text-center text-xs text-slate-500 bg-white/5 rounded-2xl border border-white/5">
+                  Aucune demande d'ami en attente de votre validation.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {incomingRequesters.map((requester) => {
+                    const levelInfo = getUserLevelInfo(requester.id);
+                    return (
+                      <div
+                        key={requester.id}
+                        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-rose-950/20 border border-rose-500/30 hover:border-rose-400/50 transition-all"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="relative w-11 h-11 rounded-xl overflow-hidden shrink-0 border border-rose-400/40 bg-slate-900 shadow-md">
+                            {requester.avatarUrl ? (
+                              <img src={requester.avatarUrl} alt={requester.username} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className={`w-full h-full ${requester.avatarBg || 'bg-rose-600'} flex items-center justify-center font-bold text-white text-sm uppercase`}>
+                                {requester.username.charAt(0)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs sm:text-sm font-bold text-white truncate">{requester.username}</span>
+                              <span className="text-[10px] font-mono text-cyan-300 px-1.5 rounded bg-cyan-500/20 border border-cyan-500/30">
+                                Niv. {levelInfo.level}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 font-mono truncate">
+                              Souhaite devenir votre ami sur ONL
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons to Validate or Reject */}
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onOpenUserProfile(requester);
+                            }}
+                            className="p-2 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                            title="Voir la vitrine avant de valider"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRejectFriendRequest(requester)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-200 border border-white/10 text-xs font-semibold transition-colors cursor-pointer"
+                            title="Refuser cette demande"
+                          >
+                            <UserX className="w-3.5 h-3.5 text-rose-400" />
+                            <span>Refuser</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleAcceptFriendRequest(requester)}
+                            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-[0_0_15px_rgba(52,211,153,0.4)] transition-all cursor-pointer"
+                            title="Valider et ajouter comme ami"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Valider la demande</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Section B: Demandes Envoyées (En attente de leur validation) */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <Send className="w-4 h-4 text-cyan-400" />
+                  <h3 className="text-xs sm:text-sm font-bold text-white uppercase font-mono tracking-wider">
+                    Demandes envoyées
+                  </h3>
+                </div>
+                <span className="text-xs font-mono text-cyan-300">
+                  {outgoingTargets.length} en attente de leur accord
+                </span>
+              </div>
+
+              {outgoingTargets.length === 0 ? (
+                <div className="py-6 text-center text-xs text-slate-500 bg-white/5 rounded-2xl border border-white/5">
+                  Aucune demande envoyée en attente.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {outgoingTargets.map((target) => (
+                    <div
+                      key={target.id}
+                      className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-white/5 border border-white/10"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="relative w-10 h-10 rounded-xl overflow-hidden shrink-0 border border-white/15 bg-slate-900">
+                          {target.avatarUrl ? (
+                            <img src={target.avatarUrl} alt={target.username} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className={`w-full h-full ${target.avatarBg || 'bg-cyan-600'} flex items-center justify-center font-bold text-white text-xs uppercase`}>
+                              {target.username.charAt(0)}
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-white truncate block">{target.username}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            En attente de sa validation...
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCancelFriendRequest(target)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-white/10 text-xs transition-colors cursor-pointer"
+                        title="Annuler l'envoi de la demande"
+                      >
+                        <UserX className="w-3.5 h-3.5" />
+                        <span>Annuler</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: Search Players */}
         {activeTab === 'search' && (
           <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
             {/* Search Input */}
@@ -507,7 +796,10 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
               ) : (
                 searchResults.map((user) => {
                   const alreadyFriend = isAlreadyFriend(user.id);
+                  const hasSent = hasSentRequestTo(user.id);
+                  const hasReceived = hasReceivedRequestFrom(user.id);
                   const levelInfo = getUserLevelInfo(user.id);
+
                   return (
                     <div
                       key={user.id}
@@ -557,16 +849,35 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                         {alreadyFriend ? (
                           <span className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold">
                             <UserCheck className="w-3.5 h-3.5" />
-                            <span>Déjà ami</span>
+                            <span>Amis</span>
                           </span>
+                        ) : hasReceived ? (
+                          <button
+                            type="button"
+                            onClick={() => handleAcceptFriendRequest(user)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-sm transition-all cursor-pointer"
+                            title="Valider la demande"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Valider</span>
+                          </button>
+                        ) : hasSent ? (
+                          <button
+                            type="button"
+                            onClick={() => handleCancelFriendRequest(user)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-white/10 text-xs transition-colors cursor-pointer"
+                          >
+                            <UserX className="w-3.5 h-3.5" />
+                            <span>En attente...</span>
+                          </button>
                         ) : (
                           <button
                             type="button"
-                            onClick={() => handleAddFriend(user)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/30 text-xs font-semibold transition-all cursor-pointer shadow-sm"
+                            onClick={() => handleSendFriendRequest(user)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-xs font-semibold transition-all cursor-pointer shadow-sm"
                           >
                             <UserPlus className="w-3.5 h-3.5" />
-                            <span>Ajouter</span>
+                            <span>Demander</span>
                           </button>
                         )}
                       </div>

@@ -67,6 +67,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [editingGameId, setEditingGameId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Game Form State
   const [title, setTitle] = useState('');
@@ -954,18 +955,44 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         <span>Modifier</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (window.confirm(`Supprimer définitivement "${game.title}" de Firebase ?`)) {
-                            onDeleteGame(game.id);
-                          }
-                        }}
-                        className="p-1.5 rounded-lg text-red-400 hover:text-red-200 hover:bg-red-950/60 border border-red-500/30 transition-colors cursor-pointer"
-                        title="Supprimer ce jeu définitivement"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {confirmDeleteId === game.id ? (
+                        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-red-950/80 border border-red-500/50 animate-in fade-in duration-150">
+                          <span className="text-[10px] text-red-300 font-semibold px-1">Supprimer ?</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onDeleteGame(game.id);
+                              setConfirmDeleteId(null);
+                              if (editingGameId === game.id) {
+                                setEditingGameId(null);
+                                setTitle('');
+                                setDescription('');
+                              }
+                              setSuccessMessage(`Le jeu "${game.title}" a été supprimé avec succès.`);
+                            }}
+                            className="px-2 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold shadow-sm transition-colors cursor-pointer"
+                            title="Confirmer la suppression"
+                          >
+                            Oui
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-[11px] transition-colors cursor-pointer"
+                          >
+                            Non
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(game.id)}
+                          className="p-1.5 rounded-lg text-red-400 hover:text-red-200 hover:bg-red-950/60 border border-red-500/30 transition-colors cursor-pointer"
+                          title="Supprimer ce jeu définitivement"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))

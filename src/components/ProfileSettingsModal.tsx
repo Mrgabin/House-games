@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Game } from '../types';
+import { User, Game, UserStatus, StatusPreference } from '../types';
 import { 
   X, 
   Sparkles, 
@@ -66,6 +66,9 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
   const [selectedFeaturedIds, setSelectedFeaturedIds] = useState<string[]>(
     currentUser.featuredGameIds || []
   );
+  const [statusPreference, setStatusPreference] = useState<StatusPreference>(
+    currentUser.statusPreference || 'auto'
+  );
   const [isSaved, setIsSaved] = useState(false);
 
   if (!isOpen) return null;
@@ -85,13 +88,21 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    const newStatus: UserStatus = 
+      statusPreference === 'auto' ? (currentUser.status || 'online') :
+      statusPreference === 'online' ? 'online' :
+      statusPreference === 'away' ? 'away' :
+      statusPreference === 'dnd' ? 'dnd' : 'offline';
+
     onSaveProfile({
       username: username.trim() || currentUser.username,
       bio: bio.trim(),
       avatarUrl: avatarUrl.trim() || undefined,
       avatarBg,
       bannerUrl: bannerUrl.trim() || undefined,
-      featuredGameIds: selectedFeaturedIds
+      featuredGameIds: selectedFeaturedIds,
+      statusPreference,
+      status: newStatus
     });
     setIsSaved(true);
     setTimeout(() => {
@@ -290,12 +301,48 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
             />
           </div>
 
+          {/* Discord-like Presence Status Section */}
+          <div className="space-y-3">
+            <label className="block text-xs font-bold text-cyan-300 uppercase font-mono tracking-wider">
+              3. Statut & Présence (Style Discord)
+            </label>
+            <p className="text-xs text-slate-400">
+              Choisissez comment vous apparaissez aux autres joueurs : manuellement ou géré automatiquement par ONL.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {[
+                { pref: 'auto' as StatusPreference, label: 'Automatique (Discord)', desc: 'Détecte les jeux et l\'inactivité', dot: 'bg-gradient-to-r from-cyan-400 to-purple-400 animate-pulse' },
+                { pref: 'online' as StatusPreference, label: 'En ligne', desc: 'Toujours affiché actif', dot: 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' },
+                { pref: 'away' as StatusPreference, label: 'Inactif / Absent', desc: 'Indique une pause ou absence', dot: 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' },
+                { pref: 'dnd' as StatusPreference, label: 'Ne pas déranger', desc: 'Session concentrée', dot: 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]' },
+                { pref: 'offline' as StatusPreference, label: 'Invisible', desc: 'Apparaître hors-ligne', dot: 'bg-slate-500' }
+              ].map((opt) => (
+                <button
+                  key={opt.pref}
+                  type="button"
+                  onClick={() => setStatusPreference(opt.pref)}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
+                    statusPreference === opt.pref
+                      ? 'bg-cyan-500/20 border-cyan-400 text-white shadow-sm'
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${opt.dot}`} />
+                    <span className="text-xs font-bold truncate">{opt.label}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 leading-tight">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Showcase Section: Select Favorite Games */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-cyan-300 uppercase font-mono tracking-wider flex items-center gap-1.5">
                 <Gamepad2 className="w-4 h-4 text-cyan-400" />
-                <span>3. Vitrine de Jeux Préférés (Affichage ONL public)</span>
+                <span>4. Vitrine de Jeux Préférés (Affichage ONL public)</span>
               </label>
               <span className="text-[11px] font-mono text-purple-300">
                 {selectedFeaturedIds.length} / 4 jeux choisis

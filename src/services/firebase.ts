@@ -192,7 +192,10 @@ export const FirebaseService = {
       if (updates.bio !== undefined) cleanUpdates.bio = updates.bio.trim();
       if (updates.featuredGameIds !== undefined) cleanUpdates.featuredGameIds = updates.featuredGameIds;
       if (updates.friends !== undefined) cleanUpdates.friends = updates.friends;
+      if (updates.friendRequestsReceived !== undefined) cleanUpdates.friendRequestsReceived = updates.friendRequestsReceived;
+      if (updates.friendRequestsSent !== undefined) cleanUpdates.friendRequestsSent = updates.friendRequestsSent;
       if (updates.status !== undefined) cleanUpdates.status = updates.status;
+      if (updates.statusPreference !== undefined) cleanUpdates.statusPreference = updates.statusPreference;
       if (updates.currentGameTitle !== undefined) cleanUpdates.currentGameTitle = updates.currentGameTitle;
 
       await setDoc(userRef, cleanUpdates, { merge: true });
@@ -224,7 +227,10 @@ export const FirebaseService = {
             bio: data.bio || '',
             featuredGameIds: data.featuredGameIds || [],
             friends: data.friends || [],
+            friendRequestsReceived: data.friendRequestsReceived || [],
+            friendRequestsSent: data.friendRequestsSent || [],
             status: data.status || 'online',
+            statusPreference: data.statusPreference || 'auto',
             currentGameTitle: data.currentGameTitle || '',
             createdAt: data.createdAt || new Date().toISOString()
           });
@@ -254,7 +260,10 @@ export const FirebaseService = {
         bio: data.bio || '',
         featuredGameIds: data.featuredGameIds || [],
         friends: data.friends || [],
+        friendRequestsReceived: data.friendRequestsReceived || [],
+        friendRequestsSent: data.friendRequestsSent || [],
         status: data.status || 'online',
+        statusPreference: data.statusPreference || 'auto',
         currentGameTitle: data.currentGameTitle || '',
         createdAt: data.createdAt || new Date().toISOString()
       };
@@ -479,7 +488,10 @@ export const FirebaseService = {
           bio: data.bio || '',
           featuredGameIds: data.featuredGameIds || [],
           friends: data.friends || [],
+          friendRequestsReceived: data.friendRequestsReceived || [],
+          friendRequestsSent: data.friendRequestsSent || [],
           status: data.status || 'online',
+          statusPreference: data.statusPreference || 'auto',
           currentGameTitle: data.currentGameTitle || '',
           createdAt: data.createdAt || new Date().toISOString()
         });
@@ -503,6 +515,92 @@ export const FirebaseService = {
     } catch (e) {
       console.warn("Lecture temps de jeu Firestore échouée:", e);
       return {};
+    }
+  },
+
+  async sendFriendRequest(fromUserId: string, toUserId: string): Promise<void> {
+    try {
+      const fromSnap = await getDoc(doc(db, 'users', fromUserId));
+      if (fromSnap.exists()) {
+        const sent = fromSnap.data().friendRequestsSent || [];
+        if (!sent.includes(toUserId)) {
+          await setDoc(doc(db, 'users', fromUserId), { friendRequestsSent: [...sent, toUserId] }, { merge: true });
+        }
+      }
+
+      const toSnap = await getDoc(doc(db, 'users', toUserId));
+      if (toSnap.exists()) {
+        const received = toSnap.data().friendRequestsReceived || [];
+        if (!received.includes(fromUserId)) {
+          await setDoc(doc(db, 'users', toUserId), { friendRequestsReceived: [...received, fromUserId] }, { merge: true });
+        }
+      }
+    } catch (e) {
+      console.warn("Erreur envoi demande d'ami Firebase:", e);
+    }
+  },
+
+  async acceptFriendRequest(currentUserId: string, requesterUserId: string): Promise<void> {
+    try {
+      const currSnap = await getDoc(doc(db, 'users', currentUserId));
+      if (currSnap.exists()) {
+        const data = currSnap.data();
+        const received = (data.friendRequestsReceived || []).filter((id: string) => id !== requesterUserId);
+        const friends = data.friends || [];
+        const newFriends = friends.includes(requesterUserId) ? friends : [...friends, requesterUserId];
+        await setDoc(doc(db, 'users', currentUserId), {
+          friendRequestsReceived: received,
+          friends: newFriends
+        }, { merge: true });
+      }
+
+      const reqSnap = await getDoc(doc(db, 'users', requesterUserId));
+      if (reqSnap.exists()) {
+        const data = reqSnap.data();
+        const sent = (data.friendRequestsSent || []).filter((id: string) => id !== currentUserId);
+        const friends = data.friends || [];
+        const newFriends = friends.includes(currentUserId) ? friends : [...friends, currentUserId];
+        await setDoc(doc(db, 'users', requesterUserId), {
+          friendRequestsSent: sent,
+          friends: newFriends
+        }, { merge: true });
+      }
+    } catch (e) {
+      console.warn("Erreur acceptation demande ami Firebase:", e);
+    }
+  },
+
+  async rejectFriendRequest(currentUserId: string, requesterUserId: string): Promise<void> {
+    try {
+      const currSnap = await getDoc(doc(db, 'users', currentUserId));
+      if (currSnap.exists()) {
+        const received = (currSnap.data().friendRequestsReceived || []).filter((id: string) => id !== requesterUserId);
+        await setDoc(doc(db, 'users', currentUserId), { friendRequestsReceived: received }, { merge: true });
+      }
+      const reqSnap = await getDoc(doc(db, 'users', requesterUserId));
+      if (reqSnap.exists()) {
+        const sent = (reqSnap.data().friendRequestsSent || []).filter((id: string) => id !== currentUserId);
+        await setDoc(doc(db, 'users', requesterUserId), { friendRequestsSent: sent }, { merge: true });
+      }
+    } catch (e) {
+      console.warn("Erreur rejet demande ami Firebase:", e);
+    }
+  },
+
+  async cancelFriendRequest(currentUserId: string, targetUserId: string): Promise<void> {
+    try {
+      const currSnap = await getDoc(doc(db, 'users', currentUserId));
+      if (currSnap.exists()) {
+        const sent = (currSnap.data().friendRequestsSent || []).filter((id: string) => id !== targetUserId);
+        await setDoc(doc(db, 'users', currentUserId), { friendRequestsSent: sent }, { merge: true });
+      }
+      const targetSnap = await getDoc(doc(db, 'users', targetUserId));
+      if (targetSnap.exists()) {
+        const received = (targetSnap.data().friendRequestsReceived || []).filter((id: string) => id !== currentUserId);
+        await setDoc(doc(db, 'users', targetUserId), { friendRequestsReceived: received }, { merge: true });
+      }
+    } catch (e) {
+      console.warn("Erreur annulation demande ami Firebase:", e);
     }
   }
 };

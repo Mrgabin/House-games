@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { GameArtwork } from './GameArtwork';
 import { calculateGlobalLevel, calculateLevelFromSeconds, formatPlaytime } from '../utils/level';
+import { StatusDropdown } from './StatusDropdown';
+import { UserStatus, StatusPreference } from '../types';
 
 interface PublicProfileModalProps {
   isOpen: boolean;
@@ -35,6 +37,10 @@ interface PublicProfileModalProps {
   onPlayGame: (game: Game) => void;
   onOpenGameDetails: (game: Game) => void;
   onAddFriend?: (user: User) => void;
+  onSendFriendRequest?: (user: User) => void;
+  onAcceptFriendRequest?: (user: User) => void;
+  onCancelFriendRequest?: (user: User) => void;
+  onUpdateStatus?: (status: UserStatus, preference: StatusPreference) => void;
   onOpenCommunity?: () => void;
   onShowToast?: (msg: string) => void;
 }
@@ -50,6 +56,10 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
   onPlayGame,
   onOpenGameDetails,
   onAddFriend,
+  onSendFriendRequest,
+  onAcceptFriendRequest,
+  onCancelFriendRequest,
+  onUpdateStatus,
   onOpenCommunity,
   onShowToast
 }) => {
@@ -59,6 +69,8 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
 
   const isMe = currentUser?.id === user.id;
   const isFriend = (currentUser?.friends || []).includes(user.id);
+  const hasSent = (currentUser?.friendRequestsSent || []).includes(user.id);
+  const hasReceived = (currentUser?.friendRequestsReceived || []).includes(user.id);
 
   // Compute Global ONL Level dynamically: 30 min = 1 XP, 10 XP = 1 Niveau
   const globalLevelInfo = calculateGlobalLevel(playtimeSecondsMap);
@@ -130,6 +142,15 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
 
           {/* Profile Quick Action in Banner */}
           <div className="absolute top-4 left-4 z-20 flex items-center gap-2 flex-wrap">
+            {isMe && onUpdateStatus && currentUser && (
+              <StatusDropdown
+                currentStatus={currentUser.status || 'online'}
+                statusPreference={currentUser.statusPreference || 'auto'}
+                currentGameTitle={currentUser.currentGameTitle}
+                onSelectStatus={onUpdateStatus}
+              />
+            )}
+
             {isMe && onOpenSettings && (
               <button
                 type="button"
@@ -144,29 +165,43 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
               </button>
             )}
 
-            {!isMe && currentUser && onAddFriend && (
-              <button
-                type="button"
-                onClick={() => onAddFriend(user)}
-                disabled={isFriend}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold backdrop-blur-md transition-all cursor-pointer shadow-md ${
-                  isFriend
-                    ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-500/40'
-                    : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold border border-cyan-300'
-                }`}
-              >
-                {isFriend ? (
-                  <>
-                    <UserCheck className="w-3.5 h-3.5" />
-                    <span>Amis sur ONL</span>
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>Ajouter en ami</span>
-                  </>
-                )}
-              </button>
+            {!isMe && currentUser && (
+              isFriend ? (
+                <div className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold backdrop-blur-md shadow-md bg-emerald-500/25 text-emerald-200 border border-emerald-500/40">
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Amis sur ONL</span>
+                </div>
+              ) : hasReceived ? (
+                <button
+                  type="button"
+                  onClick={() => onAcceptFriendRequest ? onAcceptFriendRequest(user) : onAddFriend && onAddFriend(user)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold backdrop-blur-md transition-all cursor-pointer shadow-md bg-emerald-500 hover:bg-emerald-400 text-slate-950 border border-emerald-300"
+                  title="Valider la demande d'ami reçue"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Valider la demande</span>
+                </button>
+              ) : hasSent ? (
+                <button
+                  type="button"
+                  onClick={() => onCancelFriendRequest && onCancelFriendRequest(user)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold backdrop-blur-md transition-all cursor-pointer shadow-md bg-white/10 hover:bg-rose-500/20 text-slate-300 hover:text-rose-200 border border-white/20"
+                  title="Annuler la demande d'ami envoyée"
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-cyan-300" />
+                  <span>Demande envoyée · Annuler</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onSendFriendRequest ? onSendFriendRequest(user) : onAddFriend && onAddFriend(user)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold backdrop-blur-md transition-all cursor-pointer shadow-md bg-cyan-500 hover:bg-cyan-400 text-slate-950 border border-cyan-300"
+                  title="Envoyer une demande d'ami"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Demander en ami</span>
+                </button>
+              )
             )}
 
             {/* Share / Copy Profile Page URL button */}

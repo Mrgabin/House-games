@@ -62,6 +62,9 @@ export interface UserPlaytime {
   lastPlayedAt: string;
 }
 
+export type UserStatus = 'online' | 'in-game' | 'away' | 'dnd' | 'offline';
+export type StatusPreference = 'online' | 'away' | 'dnd' | 'offline' | 'auto';
+
 export interface User {
   id: string;
   email: string;
@@ -74,7 +77,10 @@ export interface User {
   bio?: string; // Bio / citation / slogan de profil
   featuredGameIds?: string[]; // Vitrine publique des jeux préférés
   friends?: string[]; // Liste des IDs des amis
-  status?: 'online' | 'in-game' | 'away' | 'offline';
+  friendRequestsReceived?: string[]; // Liste des IDs des joueurs ayant envoyé une demande d'ami
+  friendRequestsSent?: string[]; // Liste des IDs des joueurs à qui une demande a été envoyée
+  status?: UserStatus;
+  statusPreference?: StatusPreference; // Choix manuel ('online' | 'away' | 'offline') ou 'auto'
   currentGameTitle?: string;
   createdAt: string;
 }

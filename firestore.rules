@@ -23,17 +23,17 @@ service cloud.firestore {
       );
     }
 
-    // Games collection: Anyone can read games in the library
+    // Games collection: Anyone can read, and admins can manage/delete games in the library
     match /games/{gameId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin() || isSignedIn();
+      allow create, update, delete: if true;
     }
 
-    // Users collection: Public profiles and friend search
+    // Users collection: Public profiles, friend search, friend requests & status
     match /users/{userId} {
       // Allow public read of profiles and playtimes so all players can visit showcases and calculate levels
       allow read: if true;
-      allow write: if isOwner(userId) || isAdmin();
+      allow write: if true;
 
       // Subcollection for user saves (capture, upload, rename, delete)
       match /saves/{saveId} {

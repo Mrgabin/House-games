@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Game, GameCategory, User, ActiveView, DayPlaytimeBreakdown } from './types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Game, GameCategory, User, ActiveView, DayPlaytimeBreakdown, UserStatus, StatusPreference } from './types';
 import { StorageService } from './services/storage';
 import { FirebaseService } from './services/firebase';
 import { CelestialBackground } from './components/CelestialBackground';
@@ -258,22 +258,172 @@ export default function App() {
 
   const handleDeleteGame = async (gameId: string) => {
     const gameToDelete = games.find(g => g.id === gameId);
-    try {
-      await FirebaseService.deleteGame(gameId);
-      showToast(`"${gameToDelete?.title || 'Jeu'}" supprimé de Firebase.`);
-    } catch (e) {
-      console.error('Erreur suppression Firebase:', e);
-      StorageService.deleteGame(gameId);
-      setGames(prev => prev.filter(g => g.id !== gameId));
-    }
 
+    // 1. Immediately remove from local storage & memory state so admin sees it vanish instantly
+    StorageService.deleteGame(gameId);
+    setGames(prev => prev.filter(g => g.id !== gameId));
     setFavorites(prev => prev.filter(id => id !== gameId));
+
     if (selectedGameForDetails?.id === gameId) {
       setSelectedGameForDetails(null);
     }
     if (playingGame?.id === gameId) {
       setPlayingGame(null);
     }
+    if (gameToEdit?.id === gameId) {
+      setGameToEdit(null);
+    }
+
+    // 2. Synchronize deletion with Firestore
+    try {
+      await FirebaseService.deleteGame(gameId);
+      showToast(`"${gameToDelete?.title || 'Jeu'}" supprimé définitivement de la bibliothèque.`);
+    } catch (e) {
+      console.warn('Suppression Firestore échouée (supprimé localement):', e);
+      showToast(`"${gameToDelete?.title || 'Jeu'}" supprimé localement.`);
+    }
+  };
+
+  // Handler for manual presence status modification
+  const handleUpdateStatus = (newStatus: UserStatus, preference: StatusPreference) => {
+    if (!currentUser) return;
+    const updated = StorageService.updateUserStatus(currentUser.id, newStatus, currentUser.currentGameTitle, preference);
+    if (updated) {
+      setCurrentUser(updated);
+    }
+    try {
+      FirebaseService.updateUserProfile(currentUser.id, {
+        status: newStatus,
+        statusPreference: preference
+      });
+    } catch (e) {
+      console.warn("Erreur mise à jour statut Firebase:", e);
+    }
+
+    const labels: Record<string, string> = {
+      online: 'En ligne',
+      away: 'Inactif / Absent',
+      dnd: 'Ne pas déranger',
+      offline: 'Invisible (Hors-ligne)',
+      auto: 'Automatique (Style Discord)'
+    };
+    showToast(`Statut mis à jour : ${labels[preference] || labels[newStatus] || newStatus}`);
+  };
+
+  // Discord-like Automatic Presence & Idle Detection
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // If user explicitly chose a manual status (not 'auto'), respect their preference
+    const pref = currentUser.statusPreference || 'auto';
+    if (pref !== 'auto') {
+      return;
+    }
+
+    let lastInteraction = Date.now();
+
+    const handleUserInteraction = () => {
+      lastInteraction = Date.now();
+      // If currently marked as away due to idle, return to online (or in-game if game running)
+      if (currentUser.status === 'away') {
+        const nextStatus: UserStatus = playingGame ? 'in-game' : 'online';
+        const gameTitle = playingGame ? playingGame.title : '';
+        StorageService.updateUserStatus(currentUser.id, nextStatus, gameTitle, 'auto');
+        setCurrentUser(prev => prev ? { ...prev, status: nextStatus, currentGameTitle: gameTitle } : null);
+        FirebaseService.updateUserProfile(currentUser.id, { status: nextStatus, currentGameTitle: gameTitle });
+      }
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach(evt => window.addEventListener(evt, handleUserInteraction, { passive: true }));
+
+    // Check idle every 15 seconds (idle threshold = 150 seconds / 2.5 minutes)
+    const interval = setInterval(() => {
+      if (!playingGame && currentUser.status === 'online') {
+        const idleTime = Date.now() - lastInteraction;
+        if (idleTime > 150000) { // 2.5 minutes
+          StorageService.updateUserStatus(currentUser.id, 'away', undefined, 'auto');
+          setCurrentUser(prev => prev ? { ...prev, status: 'away' } : null);
+          FirebaseService.updateUserProfile(currentUser.id, { status: 'away' });
+        }
+      }
+    }, 15000);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        handleUserInteraction();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      events.forEach(evt => window.removeEventListener(evt, handleUserInteraction));
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentUser?.id, currentUser?.statusPreference, currentUser?.status, playingGame]);
+
+  // Synchronize 'in-game' status when playingGame starts or stops
+  useEffect(() => {
+    if (!currentUser) return;
+    const pref = currentUser.statusPreference || 'auto';
+    if (pref !== 'auto') return;
+
+    if (playingGame) {
+      StorageService.updateUserStatus(currentUser.id, 'in-game', playingGame.title, 'auto');
+      setCurrentUser(prev => prev ? { ...prev, status: 'in-game', currentGameTitle: playingGame.title } : null);
+      FirebaseService.updateUserProfile(currentUser.id, { status: 'in-game', currentGameTitle: playingGame.title });
+    } else {
+      StorageService.updateUserStatus(currentUser.id, 'online', '', 'auto');
+      setCurrentUser(prev => prev ? { ...prev, status: 'online', currentGameTitle: '' } : null);
+      FirebaseService.updateUserProfile(currentUser.id, { status: 'online', currentGameTitle: '' });
+    }
+  }, [playingGame?.id]);
+
+  // Handlers for Friend Requests across PublicProfileModal & FriendsModal
+  const handleSendFriendRequest = async (targetUser: User) => {
+    if (!currentUser) {
+      showToast("Veuillez vous connecter pour envoyer une demande d'ami.");
+      return;
+    }
+    const res = StorageService.sendFriendRequest(currentUser.id, targetUser.id);
+    if (res) {
+      setCurrentUser(res.currentUser);
+    }
+    try {
+      await FirebaseService.sendFriendRequest(currentUser.id, targetUser.id);
+    } catch (e) {
+      console.warn("Erreur envoi demande d'ami Firebase:", e);
+    }
+    showToast(`Demande d'ami envoyée à ${targetUser.username} !`);
+  };
+
+  const handleAcceptFriendRequest = async (requesterUser: User) => {
+    if (!currentUser) return;
+    const res = StorageService.acceptFriendRequest(currentUser.id, requesterUser.id);
+    if (res) {
+      setCurrentUser(res.currentUser);
+    }
+    try {
+      await FirebaseService.acceptFriendRequest(currentUser.id, requesterUser.id);
+    } catch (e) {
+      console.warn("Erreur acceptation ami Firebase:", e);
+    }
+    showToast(`Demande validée ! ${requesterUser.username} est désormais votre ami sur ONL.`);
+  };
+
+  const handleCancelFriendRequest = async (targetUser: User) => {
+    if (!currentUser) return;
+    const updated = StorageService.cancelFriendRequest(currentUser.id, targetUser.id);
+    if (updated) {
+      setCurrentUser(updated);
+    }
+    try {
+      await FirebaseService.cancelFriendRequest(currentUser.id, targetUser.id);
+    } catch (e) {
+      console.warn("Erreur annulation demande ami Firebase:", e);
+    }
+    showToast(`Demande d'ami pour ${targetUser.username} annulée.`);
   };
 
   const handleResetDefaults = () => {
@@ -392,6 +542,7 @@ export default function App() {
         activeView={activeView}
         favoritesCount={favorites.length}
         friendsCount={currentUser?.friends?.length || 0}
+        pendingRequestsCount={(currentUser?.friendRequestsReceived || []).length}
         onSelectView={(view) => setActiveView(view)}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenAdmin={() => setIsAdminModalOpen(true)}
@@ -405,6 +556,7 @@ export default function App() {
           if (currentUser) setIsProfileSettingsOpen(true);
           else setIsAuthModalOpen(true);
         }}
+        onUpdateStatus={handleUpdateStatus}
         onLogout={handleLogout}
       />
 
@@ -757,20 +909,11 @@ export default function App() {
           setIsFriendsModalOpen(true);
         }}
         onShowToast={showToast}
-        onAddFriend={async (targetUser) => {
-          if (!currentUser) {
-            showToast("Veuillez vous connecter pour ajouter des amis.");
-            return;
-          }
-          const updated = StorageService.addFriend(currentUser.id, targetUser.id);
-          if (updated) setCurrentUser(updated);
-          try {
-            await FirebaseService.updateUserProfile(currentUser.id, {
-              friends: [...(currentUser.friends || []), targetUser.id]
-            });
-          } catch (e) {}
-          showToast(`"${targetUser.username}" ajouté à vos amis !`);
-        }}
+        onSendFriendRequest={handleSendFriendRequest}
+        onAcceptFriendRequest={handleAcceptFriendRequest}
+        onCancelFriendRequest={handleCancelFriendRequest}
+        onAddFriend={handleSendFriendRequest}
+        onUpdateStatus={handleUpdateStatus}
       />
 
     </div>

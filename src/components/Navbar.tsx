@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, ActiveView } from '../types';
+import { User, ActiveView, UserStatus, StatusPreference } from '../types';
 import { 
   User as UserIcon, 
   Shield, 
@@ -10,8 +10,10 @@ import {
   Users, 
   Settings,
   Gamepad2,
-  Zap
+  Zap,
+  Bell
 } from 'lucide-react';
+import { StatusDropdown } from './StatusDropdown';
 
 interface NavbarProps {
   currentUser: User | null;
@@ -19,6 +21,7 @@ interface NavbarProps {
   activeView: ActiveView;
   favoritesCount: number;
   friendsCount?: number;
+  pendingRequestsCount?: number;
   onSelectView: (view: ActiveView) => void;
   onOpenAuth: () => void;
   onOpenAdmin: () => void;
@@ -26,6 +29,7 @@ interface NavbarProps {
   onOpenFriends: () => void;
   onOpenProfile: () => void;
   onOpenProfileSettings: () => void;
+  onUpdateStatus?: (status: UserStatus, preference: StatusPreference) => void;
   onLogout: () => void;
 }
 
@@ -35,6 +39,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeView,
   favoritesCount,
   friendsCount = 0,
+  pendingRequestsCount = 0,
   onSelectView,
   onOpenAuth,
   onOpenAdmin,
@@ -42,6 +47,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenFriends,
   onOpenProfile,
   onOpenProfileSettings,
+  onUpdateStatus,
   onLogout
 }) => {
   return (
@@ -107,11 +113,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Users className="w-3.5 h-3.5 text-cyan-400" />
             <span>Communauté & Joueurs</span>
-            {friendsCount > 0 && (
+            {pendingRequestsCount > 0 ? (
+              <span className="ml-1 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-rose-500 text-white animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]" title={`${pendingRequestsCount} demande(s) d'ami(s) à valider`}>
+                {pendingRequestsCount} demande{pendingRequestsCount > 1 ? 's' : ''}
+              </span>
+            ) : friendsCount > 0 ? (
               <span className="ml-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                 {friendsCount}
               </span>
-            )}
+            ) : null}
           </button>
 
           {currentUser?.isAdmin && (
@@ -145,15 +155,19 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Zone 3: Actions & Profile */}
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           
-          {/* Mobile Amis Button */}
+          {/* Mobile Amis Button with Request Badge */}
           <button
             type="button"
             onClick={onOpenFriends}
-            className="md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs hover:text-white cursor-pointer"
-            title="Ouvrir la liste d'amis"
+            className="md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs hover:text-white cursor-pointer relative"
+            title="Ouvrir la liste d'amis et demandes"
           >
             <Users className="w-3.5 h-3.5 text-cyan-400" />
-            {friendsCount > 0 && <span className="font-mono text-[10px]">{friendsCount}</span>}
+            {pendingRequestsCount > 0 ? (
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+            ) : friendsCount > 0 ? (
+              <span className="font-mono text-[10px]">{friendsCount}</span>
+            ) : null}
           </button>
 
           {currentUser ? (
@@ -168,6 +182,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <PlusCircle className="w-3.5 h-3.5 text-purple-400" />
                   <span>Ajouter jeu</span>
                 </button>
+              )}
+
+              {/* Status Selector Dropdown (Discord Style & Manual) */}
+              {onUpdateStatus && (
+                <StatusDropdown
+                  currentStatus={currentUser.status || 'online'}
+                  statusPreference={currentUser.statusPreference || 'auto'}
+                  currentGameTitle={currentUser.currentGameTitle}
+                  onSelectStatus={onUpdateStatus}
+                  className="hidden sm:block"
+                />
               )}
 
               {/* ONL User Avatar & Profile Trigger */}
@@ -185,7 +210,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                       {currentUser.username.charAt(0)}
                     </div>
                   )}
-                  <span className="absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full bg-emerald-400 ring-1 ring-black" />
+                  {/* Dynamic Status Indicator Dot */}
+                  <span 
+                    className={`absolute bottom-0 right-0 w-2 h-2 rounded-full ring-1 ring-black ${
+                      currentUser.status === 'in-game'
+                        ? 'bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(76,230,255,0.9)]'
+                        : currentUser.status === 'away'
+                        ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]'
+                        : currentUser.status === 'offline'
+                        ? 'bg-slate-500'
+                        : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                    }`} 
+                  />
                 </div>
                 <div className="hidden sm:flex items-center gap-1.5">
                   <span className="font-medium text-slate-200 truncate max-w-[100px] group-hover:text-cyan-300 transition-colors">

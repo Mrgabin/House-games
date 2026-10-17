@@ -702,12 +702,11 @@ export const GameDetailsModal: React.FC<GameDetailsModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm(`Supprimer définitivement "${game.title}" du site ?`)) {
-                      onDeleteGame(game.id);
-                      onClose();
-                    }
+                    onDeleteGame(game.id);
+                    onClose();
                   }}
                   className="flex items-center gap-1.5 px-3 py-2 text-xs text-rose-400 hover:text-rose-200 hover:bg-rose-950/60 border border-rose-500/30 rounded-xl transition-colors cursor-pointer"
+                  title="Supprimer ce jeu définitivement"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Supprimer</span>
